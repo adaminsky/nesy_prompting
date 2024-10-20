@@ -1,1 +1,6 @@
+-e .
+
 pytest
+torch
+torchvision
+torchaudio
