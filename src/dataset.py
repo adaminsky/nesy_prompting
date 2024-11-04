@@ -5,45 +5,53 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 
-class MNISTSum2OrigDataset(torch.utils.data.Dataset):
-    def __init__(self, root, train=True, transform=None, target_transform=None, download=False):
+class MNISTSumKOrigDataset(torch.utils.data.Dataset):
+    def __init__(self, root, train=True, transform=None, target_transform=None, download=False, k=2):
         self.mnist = torchvision.datasets.MNIST(root, train, transform, target_transform, download)
         self.train = train
+        self.k = 2
 
     def __getitem__(self, index):
-        img1, label1 = self.mnist[index * 2]
-        img2, label2 = self.mnist[index * 2 + 1]
-        sum_label = (label1 + label2)
+        imgs = []
+        labels = []
+        for i in range(self.k):
+            img, label = self.mnist[index * self.k + i]
+            imgs.append(img)
+            labels.append(label)
+        sum_label = sum(labels)
 
-        return img1, img2, sum_label
+        return *imgs, sum_label
 
     def __len__(self):
-        return len(self.mnist) // 2
+        return len(self.mnist) // self.k
 
 
-class MNISTSum2Dataset(torch.utils.data.Dataset):
-    def __init__(self, root, train=True, transform=None, target_transform=None, download=False):
+class MNISTSumKDataset(torch.utils.data.Dataset):
+    def __init__(self, root, train=True, transform=None, target_transform=None, download=False, k=2):
         self.mnist = torchvision.datasets.MNIST(root, train, transform, target_transform, download)
         self.train = train
+        self.k = 2
 
     def __getitem__(self, index):
-        img1, label1 = self.mnist[index * 2]
-        img2, label2 = self.mnist[index * 2 + 1]
-        sum_label = (label1 + label2)
-
-        img = Image.new("RGB", (img1.width + img2.width, img1.height))
-        img.paste(img1, (0, 0))
-        img.paste(img2, (img1.width, 0))
-        return img, sum_label, label1, label2
+        imgs = []
+        labels = []
+        for i in range(self.k):
+            img, label = self.mnist[index * self.k + i]
+            imgs.append(img)
+            labels.append(label)
+        sum_label = sum(labels)
+        img = Image.new("RGB", (28 * self.k, 28))
+        for i in range(self.k):
+            img.paste(imgs[i], (28 * i, 0))
+        return img, sum_label, *labels
 
     def __len__(self):
-        return len(self.mnist) // 2
-
+        return len(self.mnist) // self.k
 
 
 def main():
     logger.info("Downloading required datasets")
-    MNISTSum2Dataset(root="./data", train=True, download=True)
+    MNISTSumKDataset(root="./data", train=True, download=True)
 
 
 if __name__ == "__main__":
