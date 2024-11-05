@@ -35,7 +35,7 @@ class Function:
                 )
             )
 
-        return self.fn(*symbols)
+        return self.fn(*symbols), *symbols
 
     def nesy_v2(self, input):
         """Rather than symbolic input, we now have a single non-symbolic input

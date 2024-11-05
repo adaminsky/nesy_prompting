@@ -77,18 +77,18 @@ class HWFDataset(torch.utils.data.Dataset):
         super(HWFDataset, self).__init__()
         self.root = root
         self.split = split
-        md = json.load(open(os.path.join(root, f"HWF/hwf_{split}.json")))
+        md = json.load(open(os.path.join(root, f"HWF/expr_{split}.json")))
 
         # finding only the metadata with length == 1
         if length > 0:
-            self.metadata = [m for m in md if len(m["img_paths"]) <= length]
+            self.metadata = [m for m in md if len(m["img_paths"]) == length]
         else:
             self.metadata = md
 
         self.img_transform = torchvision.transforms.Compose(
             [
                 torchvision.transforms.ToTensor(),
-                torchvision.transforms.Normalize((0.5,), (1,)),
+                # torchvision.transforms.Normalize((0.5,), (1,)),
             ]
         )
 
