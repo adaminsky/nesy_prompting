@@ -4,6 +4,8 @@ import logging
 import json
 import os
 from PIL import Image
+import numpy as np
+from typing import Optional, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +133,73 @@ class HWFDataset(torch.utils.data.Dataset):
         )
         results = torch.stack([torch.tensor(res) for (_, _, res) in batch])
         return (img_seqs, img_seq_len, results)
+
+
+class PathFinder128Dataset(torch.utils.data.Dataset):
+    pathfinder_img_transform = torchvision.transforms.Compose(
+        [
+            torchvision.transforms.ToTensor(),
+            torchvision.transforms.Normalize((0.1307,), (0.3081,)),
+        ]
+    )
+
+    """
+    :param data_root, the root directory of the data folder
+    :param data_dir, the directory to the pathfinder dataset under the root folder
+    :param difficulty, can be picked from "easy", "normal", "hard", and "all"
+    """
+
+    def __init__(
+        self,
+        data_root: str,
+        data_dir: str = "128",
+        difficulty: str = "all",
+        transform: Optional[Callable] = pathfinder_img_transform,
+    ):
+        # Store
+        self.transform = transform
+
+        # Get subdirectories
+        easy, normal, hard = (
+            ("curv_baseline", 0),
+            ("curv_contour_length_9", 1),
+            ("curv_contour_length_14", 2),
+        )
+        if difficulty == "all":
+            sub_dirs = [easy, normal, hard]
+        elif difficulty == "easy":
+            sub_dirs = [easy]
+        elif difficulty == "normal":
+            sub_dirs = [normal]
+        elif difficulty == "hard":
+            sub_dirs = [hard]
+        else:
+            raise Exception(f"Unrecognized difficulty {difficulty}")
+
+        # Get all image paths and their labels
+        self.samples = []
+        for sub_dir, difficulty_id in sub_dirs:
+            metadata_dir = os.path.join(data_root, data_dir, sub_dir, "metadata")
+            for sample_group_file in os.listdir(metadata_dir):
+                sample_group_dir = os.path.join(metadata_dir, sample_group_file)
+                sample_group_file = open(sample_group_dir, "r")
+                sample_group_lines = np.load(sample_group_dir)
+                for sample_line in sample_group_lines:
+                    sample_img_path = os.path.join(
+                        data_root, data_dir, sub_dir, sample_line[0], sample_line[1]
+                    )
+                    sample_label = int(sample_line[3])
+                    self.samples.append((sample_img_path, difficulty_id, sample_label))
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        (img_path, difficulty_id, label) = self.samples[idx]
+        img = Image.open(open(img_path, "rb"))
+        if self.transform is not None:
+            img = self.transform(img)
+        return (img, difficulty_id, label)
 
 
 def main():
