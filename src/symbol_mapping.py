@@ -33,11 +33,13 @@ def prompting_mapper(input, allowed_symbols, model, processor):
     return allowed_symbols[[str(s) for s in allowed_symbols].index(model_output)]
 
 
-def prompting_mapper_structure(input, obj_num, allowed_symbols, model, processor):
+def prompting_mapper_structure(
+    input, total, obj_num, allowed_symbols, model, processor
+):
     # Simplest prompting strategy: just ask for which symbol is present in the image
     obj_str = [
         "first",
-        "secont",
+        "second",
         "third",
         "fourth",
         "fifth",
@@ -54,7 +56,7 @@ def prompting_mapper_structure(input, obj_num, allowed_symbols, model, processor
                 {"type": "image"},
                 {
                     "type": "text",
-                    "text": f"In the input image, which of the following symbols is present in the {obj_str[obj_num]} object: {', '.join([str(s) for s in allowed_symbols])}? Output only the symbol.",
+                    "text": f"The input image contains {total} objects. The {obj_str[obj_num]} object is one of the following symbols: {', '.join([str(s) for s in allowed_symbols])}. Which symbol is {obj_str[obj_num]} object? Output only the symbol.",
                 },
             ],
         }
@@ -72,6 +74,7 @@ def prompting_mapper_structure(input, obj_num, allowed_symbols, model, processor
         processor.decode(model_output[0])[len(input_text) :]
         .strip()
         .replace("<|eot_id|>", "")
+        .strip(".")
     )
     if model_output not in [str(s) for s in allowed_symbols]:
         print(model_output)

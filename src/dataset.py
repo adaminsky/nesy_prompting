@@ -139,7 +139,7 @@ class PathFinder128Dataset(torch.utils.data.Dataset):
     pathfinder_img_transform = torchvision.transforms.Compose(
         [
             torchvision.transforms.ToTensor(),
-            torchvision.transforms.Normalize((0.1307,), (0.3081,)),
+            # torchvision.transforms.Normalize((0.1307,), (0.3081,)),
         ]
     )
 
@@ -200,6 +200,87 @@ class PathFinder128Dataset(torch.utils.data.Dataset):
         if self.transform is not None:
             img = self.transform(img)
         return (img, difficulty_id, label)
+
+
+def _dataset_to_tensor(dset, mask=None):
+    arr = np.asarray(dset, dtype=np.int64)
+    if mask is not None:
+        arr = arr[mask]
+    tensor = torch.LongTensor(arr)
+    return tensor
+
+
+class ClevrDataset(torch.utils.data.Dataset):
+    def __init__(
+        self,
+        questions_path,
+        images_path=None,
+        max_samples=None,
+    ):
+        self.images_path = images_path
+        self.max_samples = max_samples
+
+        question_json = json.load(open(questions_path, "r"))
+
+        # Data from the question file is small, so read it all into memory
+        print("Reading question data into memory")
+        self.all_questions = [
+            question_json["questions"][i]["question"]
+            for i in range(len(question_json["questions"]))
+        ]
+        self.all_image_idxs = [
+            question_json["questions"][i]["image_index"]
+            for i in range(len(question_json["questions"]))
+        ]
+        self.all_programs = None
+        if "program" in question_json["questions"][0]:
+            self.all_programs = [
+                question_json["questions"][i]["program"]
+                for i in range(len(question_json["questions"]))
+            ]
+        self.all_answers = [
+            question_json["questions"][i]["answer"]
+            for i in range(len(question_json["questions"]))
+        ]
+
+    def __getitem__(self, index):
+        question = self.all_questions[index]
+        image_idx = self.all_image_idxs[index]
+        answer = self.all_answers[index]
+        program_seq = None
+        if self.all_programs is not None:
+            program_seq = self.all_programs[index]
+
+        image = None
+        if self.images_path is not None:
+            image = Image.open(
+                os.path.join(
+                    self.images_path, f"CLEVR_train_{str(image_idx).zfill(6)}.png"
+                )
+            )
+            image = torch.FloatTensor(np.asarray(image, dtype=np.float32))
+
+        # program_json = None
+        # if program_seq is not None:
+        #     program_json_seq = []
+        #     for fn_idx in program_seq:
+        #         fn_str = self.vocab["program_idx_to_token"][fn_idx]
+        #         if fn_str == "<START>" or fn_str == "<END>":
+        #             continue
+        #         fn = iep.programs.str_to_function(fn_str)
+        #         program_json_seq.append(fn)
+        #     if self.mode == "prefix":
+        #         program_json = iep.programs.prefix_to_list(program_json_seq)
+        #     elif self.mode == "postfix":
+        #         program_json = iep.programs.postfix_to_list(program_json_seq)
+
+        return (question, image, answer, program_seq)
+
+    def __len__(self):
+        if self.max_samples is None:
+            return self.all_questions.size(0)
+        else:
+            return min(self.max_samples, self.all_questions.size(0))
 
 
 def main():

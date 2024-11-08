@@ -45,7 +45,12 @@ class Function:
         for i in range(len(self.args)):
             symbols.append(
                 self.symbol_mapper_structure(
-                    input, i, self.get_arg_symbols(i), self.model, self.processor
+                    input,
+                    len(self.args),
+                    i,
+                    self.get_arg_symbols(i),
+                    self.model,
+                    self.processor,
                 )
             )
 
