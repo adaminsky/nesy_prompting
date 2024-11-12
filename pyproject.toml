@@ -5,7 +5,7 @@ build-backend = "flit_core.buildapi"
 [project]
 name = "src"
 version = "0.0.1"
-description = "Unsupervised neurosymbolic"
+description = "Unsupervised Neurosymbolic"
 authors = [
   { name = "Adam Stein" },
 ]

@@ -7,3 +7,5 @@ torchaudio
 matplotlib
 transformers
 pre-commit
+wheel
+flash-attn

@@ -1,9 +1,7 @@
-.PHONY: create_environment requirements docs docs-serve \
-	clean
+.PHONY: create_environment requirements clean data
 
 ## GLOBALS
 
-PYTHON_VERSION = 3.10
 PYTHON_INTERPRETER = python
 
 
@@ -19,12 +17,12 @@ requirements:
 	$(PYTHON_INTERPRETER) -m pip install -r requirements.txt
 
 
-.PHONY: data
 data: requirements
 	$(PYTHON_INTERPRETER) src/dataset.py
 
 
 # ###     DOCS
+# NOTE: Commenting out docs for now since we currently have no documentation
 # docs:
 # 	cd docs && mkdocs build
 
