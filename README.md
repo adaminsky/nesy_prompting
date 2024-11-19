@@ -26,6 +26,13 @@ Finally, install the requirements with `make requirements`.
 First create the `data/` directory.
 
 #### HWF
+Download from
+[here](https://drive.google.com/file/d/1VW--BO_CSxzB9C7-ZpE3_hrZbXDqlMU-/view?usp=share_link)
+and place under `data/HWF`.
+
+#### CLEVR
+Download from [here](https://dl.fbaipublicfiles.com/clevr/CLEVR_v1.0.zip) and
+place under `data/CLEVR_v1.0`.
 
 #### Pathfinder
 

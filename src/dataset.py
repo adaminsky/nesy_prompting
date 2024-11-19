@@ -5,6 +5,7 @@ import json
 import os
 from PIL import Image
 import numpy as np
+from datasets import load_dataset
 from typing import Optional, Callable
 
 logger = logging.getLogger(__name__)
@@ -286,6 +287,8 @@ class ClevrDataset(torch.utils.data.Dataset):
 def main():
     logger.info("Downloading required datasets")
     MNISTSumKDataset(root="./data", train=True, download=True)
+
+    load_dataset("HuggingFaceM4/ChartQA", split="train")
 
 
 if __name__ == "__main__":
