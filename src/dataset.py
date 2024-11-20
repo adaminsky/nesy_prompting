@@ -216,7 +216,7 @@ class ClevrDataset(torch.utils.data.Dataset):
         self,
         questions_path,
         images_path=None,
-        scene_path = None,
+        scene_path=None,
         max_samples=None,
     ):
         self.images_path = images_path
@@ -247,9 +247,14 @@ class ClevrDataset(torch.utils.data.Dataset):
             question_json["questions"][i]["answer"]
             for i in range(len(question_json["questions"]))
         ]
-        self.all_scenes = [
-            {key:d[key] for key in ['objects', 'relationships']} for d in scene_json['scenes']
-        ] if scene_path else None
+        self.all_scenes = (
+            [
+                {key: d[key] for key in ["objects", "relationships"]}
+                for d in scene_json["scenes"]
+            ]
+            if scene_path
+            else None
+        )
 
     def __getitem__(self, index):
         question = self.all_questions[index]
@@ -258,7 +263,7 @@ class ClevrDataset(torch.utils.data.Dataset):
         program_seq = None
         if self.all_programs is not None:
             program_seq = self.all_programs[index]
-        
+
         if self.all_scenes is not None:
             scene = self.all_scenes[index]
 
@@ -294,8 +299,40 @@ class ClevrDataset(torch.utils.data.Dataset):
             return min(self.max_samples, len(self.all_questions))
 
 
+class GSM8KDataset(torch.utils.data.Dataset):
+    def __init__(self):
+        self.data = load_dataset("openai/gsm8k", "main", split="train")
+
+    def __getitem__(self, index):
+        return [
+            [None, self.data[index]["question"]],
+            int(self.data[index]["answer"].split("#### ")[-1]),
+        ]
+
+    def __len__(self):
+        return len(self.data)
+
+
+class ChartQADataset(torch.utils.data.Dataset):
+    def __init__(self):
+        self.data = load_dataset("HuggingFaceM4/ChartQA", split="train")
+
+    def __getitem__(self, index):
+        return (self.data[index]["image"], self.data[index]["query"]), self.data[index][
+            "label"
+        ][0]
+
+    def __len__(self):
+        return len(self.data)
+
+
 def main():
-    ClevrDataset("./data/CLEVR_v1.0/questions/CLEVR_train_questions.json", "./data/CLEVR_v1.0/images/train/", "./data/CLEVR_v1.0/scenes/CLEVR_train_scenes.json",max_samples=100)
+    ClevrDataset(
+        "./data/CLEVR_v1.0/questions/CLEVR_train_questions.json",
+        "./data/CLEVR_v1.0/images/train/",
+        "./data/CLEVR_v1.0/scenes/CLEVR_train_scenes.json",
+        max_samples=100,
+    )
 
 
 if __name__ == "__main__":
