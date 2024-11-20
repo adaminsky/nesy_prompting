@@ -76,6 +76,7 @@ def function_mapper(
     #     model_output = model.generate({"prompt_token_ids": input["input_ids"][0]}, params, use_tqdm=False)[0].outputs[0].text
 
     # get the json from the output
+    print(model_output)
     try:
         # json_str = re.findall(r"\{.*\}", model_output)[-1]
         # return json.loads(json_str)["result"]
@@ -146,7 +147,7 @@ def prompting_mapper(
                 )
                 image_inputs.append(input.image_input)
 
-            symbol_str = ", ".join([repr(o).replace("'", '"') for o in output])
+            symbol_str = ", ".join([json.dumps(repr(o)) for o in output])
             few_shot.append(
                 {
                     "role": "assistant",
@@ -160,7 +161,7 @@ def prompting_mapper(
             )
     elif isinstance(symbol_desc, str):
         # Implicit symbols
-        symbol_extraction_prompt += f" The symbols are {symbol_desc}."
+        symbol_extraction_prompt += f" The symbols are {symbol_desc}.\n"
     else:
         # Inferred symbols
         symbol_extraction_prompt += (
@@ -237,13 +238,14 @@ def prompting_mapper(
     # model_output = model.generate({"prompt_token_ids": inputs["input_ids"][0], "multi_modal_data": {"image": image_inputs + [fn_input]}}, params, use_tqdm=False)[0].outputs[0].text
 
     # print(input_text)
-    # print(model_output)
+    print(model_output)
     try:
         # json_str = re.findall(r"\{.*\}", model_output)[-1]
         # return json.loads(json_str)["symbols"]
         json_str = re.findall(r"\{.*\}", '{"symbols":' + model_output)[0]
         return json.loads(json_str)["symbols"]
-    except Exception:
+    except Exception as e:
+        print(e)
         return None
     # if model_output not in [str(s) for s in allowed_symbols]:
     #     print(model_output)
