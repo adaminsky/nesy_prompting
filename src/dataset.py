@@ -69,7 +69,7 @@ class MNISTSumKDataset(torch.utils.data.Dataset):
         img = Image.new("RGB", (28 * self.k, 28))
         for i in range(self.k):
             img.paste(imgs[i], (28 * i, 0))
-        return [img, None], sum_label, *labels
+        return img, sum_label, *labels
 
     def __len__(self):
         return len(self.mnist) // self.k
@@ -216,12 +216,16 @@ class ClevrDataset(torch.utils.data.Dataset):
         self,
         questions_path,
         images_path=None,
+        scene_path = None,
         max_samples=None,
     ):
         self.images_path = images_path
+        self.scene_path = scene_path
         self.max_samples = max_samples
 
         question_json = json.load(open(questions_path, "r"))
+        if scene_path:
+            scene_json = json.load(open(scene_path, "r"))
 
         # Data from the question file is small, so read it all into memory
         print("Reading question data into memory")
@@ -243,6 +247,9 @@ class ClevrDataset(torch.utils.data.Dataset):
             question_json["questions"][i]["answer"]
             for i in range(len(question_json["questions"]))
         ]
+        self.all_scenes = [
+            {key:d[key] for key in ['objects', 'relationships']} for d in scene_json['scenes']
+        ] if scene_path else None
 
     def __getitem__(self, index):
         question = self.all_questions[index]
@@ -251,6 +258,9 @@ class ClevrDataset(torch.utils.data.Dataset):
         program_seq = None
         if self.all_programs is not None:
             program_seq = self.all_programs[index]
+        
+        if self.all_scenes is not None:
+            scene = self.all_scenes[index]
 
         image = None
         if self.images_path is not None:
@@ -259,7 +269,7 @@ class ClevrDataset(torch.utils.data.Dataset):
                     self.images_path, f"CLEVR_train_{str(image_idx).zfill(6)}.png"
                 )
             )
-            image = torch.FloatTensor(np.asarray(image, dtype=np.float32))
+            # image = torch.FloatTensor(np.asarray(image, dtype=np.float32))
 
         # program_json = None
         # if program_seq is not None:
@@ -275,47 +285,17 @@ class ClevrDataset(torch.utils.data.Dataset):
         #     elif self.mode == "postfix":
         #         program_json = iep.programs.postfix_to_list(program_json_seq)
 
-        return (question, image, answer, program_seq)
+        return (question, image, answer, program_seq, scene)
 
     def __len__(self):
         if self.max_samples is None:
-            return self.all_questions.size(0)
+            return len(self.all_questions)
         else:
-            return min(self.max_samples, self.all_questions.size(0))
-
-
-class GSM8KDataset(torch.utils.data.Dataset):
-    def __init__(self):
-        self.data = load_dataset("openai/gsm8k", "main", split="train")
-
-    def __getitem__(self, index):
-        return [
-            [None, self.data[index]["question"]],
-            int(self.data[index]["answer"].split("#### ")[-1]),
-        ]
-
-    def __len__(self):
-        return len(self.data)
-
-
-class ChartQADataset(torch.utils.data.Dataset):
-    def __init__(self):
-        self.data = load_dataset("HuggingFaceM4/ChartQA", split="train")
-
-    def __getitem__(self, index):
-        return (self.data[index]["image"], self.data[index]["query"]), self.data[index][
-            "label"
-        ][0]
-
-    def __len__(self):
-        return len(self.data)
+            return min(self.max_samples, len(self.all_questions))
 
 
 def main():
-    logger.info("Downloading required datasets")
-    MNISTSumKDataset(root="./data", train=True, download=True)
-
-    load_dataset("HuggingFaceM4/ChartQA", split="train")
+    ClevrDataset("./data/CLEVR_v1.0/questions/CLEVR_train_questions.json", "./data/CLEVR_v1.0/images/train/", "./data/CLEVR_v1.0/scenes/CLEVR_train_scenes.json",max_samples=100)
 
 
 if __name__ == "__main__":
