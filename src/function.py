@@ -1,4 +1,5 @@
 from typing import Union, Any, Optional
+import logging
 from collections.abc import Callable
 from .symbol_mapping import (
     prompting_mapper,
@@ -6,6 +7,8 @@ from .symbol_mapping import (
     function_mapper,
 )
 from .utils import IOExamples, RawInput
+
+logger = logging.getLogger(__name__)
 
 
 class Function:
@@ -25,7 +28,9 @@ class Function:
         self.symbol_mapper_structure = prompting_mapper_structure
         self.learned_mapper = None
 
-    def apply_two_stage(self, args: Union[list[Any], RawInput], return_symbols=False):
+    def apply_two_stage(
+        self, args: Union[list[Any], RawInput], return_symbols=False, log=False
+    ):
         """NeSy apply function which first converts raw input to symbolic form
         and then applies a symbolic function."""
 
@@ -34,14 +39,16 @@ class Function:
             symbols = self.symbol_mapper(
                 args, self.args, self.fn, self.model, self.processor
             )
-            # print("Symbols:", symbols)
+            if log:
+                logger.info("Symbols: %s", symbols)
 
         else:
             symbols = ", ".join(args)
 
         # apply the function to the symbols
         output = self.fn_mapper(args, symbols, self.fn, self.model, self.processor)
-        # print("Output:", output)
+        if log:
+            logger.info("Output: %s", output)
 
         if return_symbols:
             return output, symbols
