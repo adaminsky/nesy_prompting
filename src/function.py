@@ -25,7 +25,7 @@ class Function:
         self.symbol_mapper_structure = prompting_mapper_structure
         self.learned_mapper = None
 
-    def apply_two_stage(self, args: Union[list[Any], RawInput]):
+    def apply_two_stage(self, args: Union[list[Any], RawInput], return_symbols=False):
         """NeSy apply function which first converts raw input to symbolic form
         and then applies a symbolic function."""
 
@@ -34,12 +34,19 @@ class Function:
             symbols = self.symbol_mapper(
                 args.raw_input, self.args, self.fn, self.model, self.processor
             )
+            # print("Symbols:", symbols)
 
         else:
             symbols = ", ".join(args)
 
         # apply the function to the symbols
-        output = self.fn_mapper(symbols, self.fn, self.model, self.processor)
+        output = self.fn_mapper(
+            args.raw_input, symbols, self.fn, self.model, self.processor
+        )
+        # print("Output:", output)
+
+        if return_symbols:
+            return output, symbols
 
         return output
 

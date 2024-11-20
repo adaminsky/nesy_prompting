@@ -284,6 +284,20 @@ class ClevrDataset(torch.utils.data.Dataset):
             return min(self.max_samples, self.all_questions.size(0))
 
 
+class GSM8KDataset(torch.utils.data.Dataset):
+    def __init__(self):
+        self.data = load_dataset("openai/gsm8k", "main", split="train")
+
+    def __getitem__(self, index):
+        return [
+            self.data[index]["question"],
+            int(self.data[index]["answer"].split("#### ")[-1]),
+        ]
+
+    def __len__(self):
+        return len(self.data)
+
+
 def main():
     logger.info("Downloading required datasets")
     MNISTSumKDataset(root="./data", train=True, download=True)
