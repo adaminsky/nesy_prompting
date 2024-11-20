@@ -1,17 +1,19 @@
 from dataclasses import dataclass
-from typing import Any
-
-
-@dataclass
-class IOExamples:
-    """Dataclass to store input-output examples for a function."""
-
-    inputs: list[str]
-    outputs: list[list[Any]]
+from typing import Any, Optional
+from PIL import Image
 
 
 @dataclass
 class RawInput:
     """Dataclass to store raw input for a function."""
 
-    raw_input: Any
+    image_input: Optional[Image.Image]
+    text_input: Optional[str]
+
+
+@dataclass
+class IOExamples:
+    """Dataclass to store input-output examples for a function."""
+
+    inputs: list[RawInput]
+    outputs: list[list[Any]]

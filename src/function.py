@@ -32,7 +32,7 @@ class Function:
         if isinstance(args, RawInput):
             # extract the symbols from the raw input
             symbols = self.symbol_mapper(
-                args.raw_input, self.args, self.fn, self.model, self.processor
+                args, self.args, self.fn, self.model, self.processor
             )
             # print("Symbols:", symbols)
 
@@ -40,9 +40,7 @@ class Function:
             symbols = ", ".join(args)
 
         # apply the function to the symbols
-        output = self.fn_mapper(
-            args.raw_input, symbols, self.fn, self.model, self.processor
-        )
+        output = self.fn_mapper(args, symbols, self.fn, self.model, self.processor)
         # print("Output:", output)
 
         if return_symbols:

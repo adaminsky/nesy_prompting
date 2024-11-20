@@ -1,4 +1,4 @@
-from .utils import IOExamples
+from .utils import IOExamples, RawInput
 from typing import Union, Optional, Callable, Any
 import json
 import inspect
@@ -7,7 +7,7 @@ import re
 
 # TODO: Currently this doesn't take into account any information about the symbols
 def function_mapper(
-    raw_input,
+    raw_input: RawInput,
     symbols: str,
     fn_desc: Union[IOExamples, str, Callable[..., Any]],
     model,
@@ -19,11 +19,16 @@ def function_mapper(
         # Inferred function
         # fn_desc_str += "Here are some input-output examples to define the function:"
         for input, output in zip(fn_desc.inputs, fn_desc.outputs):
-            if type(input) is str:
-                fn_desc_str += f"For '{input}', the function output is: {output[0]}."
-            else:
+            if input.text_input is not None and input.image_input is None:
+                fn_desc_str += (
+                    f"For '{input.text_input}', the function output is: {output[0]}."
+                )
+            elif input.text_input is None and input.image_input is not None:
                 fn_desc_str += f"Passing the input symbols from <|image|> to the function results in an output of {output[0]}."
-                image_inputs.append(input)
+                image_inputs.append(input.image_input)
+            else:
+                fn_desc_str += f"For <|image|> and '{input.text_input}', the function output is: {output[0]}."
+                image_inputs.append(input.image_input)
             fn_desc_str += "\n"
     elif isinstance(fn_desc, str):
         # Implicit function
@@ -82,7 +87,7 @@ def function_mapper(
 
 
 def prompting_mapper(
-    fn_input,
+    fn_input: RawInput,
     symbol_desc: Optional[Union[IOExamples, str]],
     fn_desc: Union[IOExamples, str, Callable[..., Any]],
     model,
@@ -100,7 +105,7 @@ def prompting_mapper(
         for input, output in zip(symbol_desc.inputs, symbol_desc.outputs):
             # symbol_extraction_prompt += f"\nFor the image <|image|>, extract the following {len(output)} symbols: {', '.join([str(o) for o in output])}."
             # symbol_extraction_prompt += f"\nInput: <|image|>\nSymbols: [{', '.join([repr(o) for o in output])}]"
-            if type(input) is str:
+            if input.text_input is not None and input.image_input is None:
                 few_shot.append(
                     {
                         "role": "user",
@@ -108,12 +113,12 @@ def prompting_mapper(
                             {
                                 "type": "text",
                                 "text": 'Output symbols for the input in the following JSON format: {"symbols": [symbol1, symbol2, ...]}.\nInput: '
-                                + input,
+                                + input.text_input,
                             }
                         ],
                     }
                 )
-            else:
+            elif input.text_input is None and input.image_input is not None:
                 few_shot.append(
                     {
                         "role": "user",
@@ -125,7 +130,22 @@ def prompting_mapper(
                         ],
                     }
                 )
-                image_inputs.append(input)
+                image_inputs.append(input.image_input)
+            else:
+                few_shot.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": 'Output symbols for the input in the following JSON format: {"symbols": [symbol1, symbol2, ...]}.\nInput: <|image|>, '
+                                + input.text_input,
+                            }
+                        ],
+                    }
+                )
+                image_inputs.append(input.image_input)
+
             symbol_str = ", ".join([repr(o).replace("'", '"') for o in output])
             few_shot.append(
                 {
@@ -148,11 +168,15 @@ def prompting_mapper(
         )
         if isinstance(fn_desc, IOExamples):
             for input, output in zip(fn_desc.inputs, fn_desc.outputs):
-                if type(input) is str:
-                    symbol_extraction_prompt += f"\nFor '{input}', the function output is: {', '.join([str(o) for o in output])}."
-                else:
+                if input.text_input is not None and input.image_input is None:
+                    symbol_extraction_prompt += f"\nFor '{input.text_input}', the function output is: {', '.join([str(o) for o in output])}."
+                elif input.text_input is None and input.image_input is not None:
                     symbol_extraction_prompt += f"\nFor <|image|>, the function output is: {', '.join([str(o) for o in output])}."
-                    image_inputs.append(input)
+                    image_inputs.append(input.image_input)
+                else:
+                    symbol_extraction_prompt += f"\nFor <|image|> and '{input.text_input}', the function output is: {', '.join([str(o) for o in output])}."
+                    image_inputs.append(input.image_input)
+
             symbol_extraction_prompt += "\n"
         elif isinstance(fn_desc, str):
             symbol_extraction_prompt += f"'{fn_desc}'."
@@ -160,13 +184,20 @@ def prompting_mapper(
             symbol_extraction_prompt += inspect.getsource(fn_desc)
 
     # symbol_extraction_prompt += 'Output the symbols for the image <|image|> in the following format: {"symbols": [symbol1, symbol2, ...]}.'
-    if type(fn_input) is str:
+    if fn_input.text_input is not None and fn_input.image_input is None:
         symbol_extraction_prompt += (
             'Output symbols for the input in the following JSON format: {"symbols": [symbol1, symbol2, ...]}.\nInput: '
-            + fn_input
+            + fn_input.text_input
         )
-    else:
+    elif fn_input.text_input is None and fn_input.image_input is not None:
         symbol_extraction_prompt += 'Output symbols for the input in the following JSON format: {"symbols": [symbol1, symbol2, ...]}.\nInput: <|image|>'
+        image_inputs.append(fn_input.image_input)
+    else:
+        symbol_extraction_prompt += (
+            'Output symbols for the input in the following JSON format: {"symbols": [symbol1, symbol2, ...]}.\nInput: <|image|>, '
+            + fn_input.text_input
+        )
+        image_inputs.append(fn_input.image_input)
 
     prompt = few_shot + [
         {
@@ -179,8 +210,6 @@ def prompting_mapper(
             ],
         }
     ]
-    if type(fn_input) is not str:
-        image_inputs.append(fn_input)
 
     input_text = (
         processor.apply_chat_template(prompt, add_generation_prompt=True)
@@ -207,6 +236,8 @@ def prompting_mapper(
     # params = SamplingParams(max_tokens=500, temperature=0.0, stop_token_ids=[128009, 128001])
     # model_output = model.generate({"prompt_token_ids": inputs["input_ids"][0], "multi_modal_data": {"image": image_inputs + [fn_input]}}, params, use_tqdm=False)[0].outputs[0].text
 
+    # print(input_text)
+    # print(model_output)
     try:
         # json_str = re.findall(r"\{.*\}", model_output)[-1]
         # return json.loads(json_str)["symbols"]
