@@ -69,7 +69,7 @@ class MNISTSumKDataset(torch.utils.data.Dataset):
         img = Image.new("RGB", (28 * self.k, 28))
         for i in range(self.k):
             img.paste(imgs[i], (28 * i, 0))
-        return img, sum_label, *labels
+        return [img, None], sum_label, *labels
 
     def __len__(self):
         return len(self.mnist) // self.k
