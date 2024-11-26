@@ -43,7 +43,7 @@ class Function:
         return output
 
     def apply_two_stage(
-        self, args: Union[list[Any], RawInput], return_symbols=False, log=False
+        self, args: Union[list[Any], RawInput], return_symbols=False, print_log=False
     ):
         """NeSy apply function which first converts raw input to symbolic form
         and then applies a symbolic function."""
@@ -51,7 +51,7 @@ class Function:
         if isinstance(args, RawInput):
             # extract the symbols from the raw input
             symbols = self.symbol_mapper(args, self.args, self.fn, self.model)
-            if log:
+            if print_log:
                 logger.info("Symbols: %s", symbols)
 
         else:
@@ -59,7 +59,7 @@ class Function:
 
         # apply the function to the symbols
         output = self.fn_mapper(args, symbols, self.fn, self.model)
-        if log:
+        if print_log:
             logger.info("Output: %s", output)
 
         if return_symbols:

@@ -23,5 +23,7 @@ class IOExamples:
 
 def img2base64(img):
     buffer = BytesIO()
+    if img.mode != "RGB":
+        img = img.convert("RGB")
     img.save(buffer, format="JPEG")
     return base64.b64encode(buffer.getvalue()).decode()

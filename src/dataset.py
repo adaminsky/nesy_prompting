@@ -214,8 +214,8 @@ def _dataset_to_tensor(dset, mask=None):
 class ClevrDataset(torch.utils.data.Dataset):
     def __init__(
         self,
-        questions_path = "./data/CLEVR_v1.0/questions/CLEVR_train_questions.json",
-        images_path = "./data/CLEVR_v1.0/images/train/",
+        questions_path="./data/CLEVR_v1.0/questions/CLEVR_train_questions.json",
+        images_path="./data/CLEVR_v1.0/images/train/",
         scene_path="./data/CLEVR_v1.0/scenes/CLEVR_train_scenes.json",
         max_samples=None,
     ):
@@ -228,7 +228,7 @@ class ClevrDataset(torch.utils.data.Dataset):
             scene_json = json.load(open(scene_path, "r"))
 
         # Data from the question file is small, so read it all into memory
-        print("Reading question data into memory")
+        logger.info("Reading question data into memory")
         self.all_questions = [
             question_json["questions"][i]["question"]
             for i in range(len(question_json["questions"]))
@@ -258,9 +258,9 @@ class ClevrDataset(torch.utils.data.Dataset):
         if self.all_scenes is not None:
             for scene in self.all_scenes:
                 for i in scene["objects"]:
-                    i.pop('rotation')
-                    i.pop('3d_coords')
-                    i.pop('pixel_coords')
+                    i.pop("rotation")
+                    i.pop("3d_coords")
+                    i.pop("pixel_coords")
 
     def __getitem__(self, index):
         question = self.all_questions[index]
@@ -269,7 +269,6 @@ class ClevrDataset(torch.utils.data.Dataset):
         program_seq = None
         if self.all_programs is not None:
             program_seq = self.all_programs[index]
-
 
         image = None
         if self.images_path is not None:
@@ -293,8 +292,7 @@ class ClevrDataset(torch.utils.data.Dataset):
         #         program_json = iep.programs.prefix_to_list(program_json_seq)
         #     elif self.mode == "postfix":
         #         program_json = iep.programs.postfix_to_list(program_json_seq)
-        
-        
+
         if self.all_scenes is not None:
             scene = self.all_scenes[index]
 
