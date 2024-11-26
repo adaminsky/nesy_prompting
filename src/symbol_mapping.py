@@ -223,7 +223,7 @@ def prompting_mapper(
         return_tensors="pt",
     ).to(model.device)
     model_output = model.generate(
-        **inputs, max_new_tokens=500, do_sample=False, temperature=None, top_p=None
+        **inputs, max_new_tokens=1000, do_sample=False, temperature=None, top_p=None
     )
     model_output = (
         # processor.decode(model_output[0])[len(input_text) :]
@@ -286,7 +286,7 @@ def prompting_mapper_structure(
     )
     inputs = processor(
         input, input_text, add_special_tokens=False, return_tensors="pt"
-    ).to(model.device)
+    )#.to(model.device)
     model_output = model.generate(
         **inputs, max_new_tokens=10, do_sample=False, temperature=None, top_p=None
     )

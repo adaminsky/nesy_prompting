@@ -214,9 +214,9 @@ def _dataset_to_tensor(dset, mask=None):
 class ClevrDataset(torch.utils.data.Dataset):
     def __init__(
         self,
-        questions_path,
-        images_path=None,
-        scene_path=None,
+        questions_path = "./data/CLEVR_v1.0/questions/CLEVR_train_questions.json",
+        images_path = "./data/CLEVR_v1.0/images/train/",
+        scene_path="./data/CLEVR_v1.0/scenes/CLEVR_train_scenes.json",
         max_samples=None,
     ):
         self.images_path = images_path
@@ -255,6 +255,12 @@ class ClevrDataset(torch.utils.data.Dataset):
             if scene_path
             else None
         )
+        if self.all_scenes is not None:
+            for scene in self.all_scenes:
+                for i in scene["objects"]:
+                    i.pop('rotation')
+                    i.pop('3d_coords')
+                    i.pop('pixel_coords')
 
     def __getitem__(self, index):
         question = self.all_questions[index]
@@ -264,8 +270,6 @@ class ClevrDataset(torch.utils.data.Dataset):
         if self.all_programs is not None:
             program_seq = self.all_programs[index]
 
-        if self.all_scenes is not None:
-            scene = self.all_scenes[index]
 
         image = None
         if self.images_path is not None:
@@ -289,8 +293,13 @@ class ClevrDataset(torch.utils.data.Dataset):
         #         program_json = iep.programs.prefix_to_list(program_json_seq)
         #     elif self.mode == "postfix":
         #         program_json = iep.programs.postfix_to_list(program_json_seq)
+        
+        
+        if self.all_scenes is not None:
+            scene = self.all_scenes[index]
 
-        return (question, image, answer, program_seq, scene)
+        # return (question, image, answer, program_seq, scene)
+        return ((image, question), answer, (program_seq, scene))
 
     def __len__(self):
         if self.max_samples is None:
@@ -327,12 +336,13 @@ class ChartQADataset(torch.utils.data.Dataset):
 
 
 def main():
-    ClevrDataset(
+    d = ClevrDataset(
         "./data/CLEVR_v1.0/questions/CLEVR_train_questions.json",
         "./data/CLEVR_v1.0/images/train/",
         "./data/CLEVR_v1.0/scenes/CLEVR_train_scenes.json",
         max_samples=100,
     )
+    d[0]
 
 
 if __name__ == "__main__":
