@@ -1,5 +1,6 @@
 from typing import Union, Any, Optional
 import logging
+from vllm import LLM
 from collections.abc import Callable
 from .symbol_mapping import (
     prompting_mapper,
@@ -14,13 +15,11 @@ logger = logging.getLogger(__name__)
 class Function:
     def __init__(
         self,
-        model,
-        processor,
+        model: LLM,
         fn: Union[Callable[..., Any], str, IOExamples],
         args: Optional[Union[IOExamples, str]],
     ):
         self.model = model
-        self.processor = processor
         self.fn = fn
         self.args = args
         self.symbol_mapper = prompting_mapper
@@ -36,9 +35,7 @@ class Function:
 
         if isinstance(args, RawInput):
             # extract the symbols from the raw input
-            symbols = self.symbol_mapper(
-                args, self.args, self.fn, self.model, self.processor
-            )
+            symbols = self.symbol_mapper(args, self.args, self.fn, self.model)
             if log:
                 logger.info("Symbols: %s", symbols)
 
@@ -46,7 +43,7 @@ class Function:
             symbols = ", ".join(args)
 
         # apply the function to the symbols
-        output = self.fn_mapper(args, symbols, self.fn, self.model, self.processor)
+        output = self.fn_mapper(args, symbols, self.fn, self.model)
         if log:
             logger.info("Output: %s", output)
 

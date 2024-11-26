@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 from typing import Any, Optional
+from io import BytesIO
+import base64
 from PIL import Image
 
 
@@ -17,3 +19,9 @@ class IOExamples:
 
     inputs: list[RawInput]
     outputs: list[list[Any]]
+
+
+def img2base64(img):
+    buffer = BytesIO()
+    img.save(buffer, format="JPEG")
+    return base64.b64encode(buffer.getvalue()).decode()
