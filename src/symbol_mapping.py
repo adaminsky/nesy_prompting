@@ -173,6 +173,7 @@ def single_prompt_mapper(
         .text
     )
 
+    print(output)
     try:
         json_str = re.findall(r"\{\s*\"result\"(?:.|\s)*?\}", output)[-1]
         return json.loads(json_str)["result"], output
