@@ -25,5 +25,17 @@ def img2base64(img):
     buffer = BytesIO()
     if img.mode != "RGB":
         img = img.convert("RGB")
+
+    # # if image larger than 600x600, resize it
+    # if img.width > 500 or img.height > 500:
+    #     # make largest dimension 600
+    #     new_width = 500
+    #     new_height = 500
+    #     if img.width > img.height:
+    #         new_height = int((500 / img.width) * img.height)
+    #     else:
+    #         new_width = int((500 / img.height) * img.width)
+    #     img = img.resize((new_width, new_height))
+
     img.save(buffer, format="JPEG")
     return base64.b64encode(buffer.getvalue()).decode()
