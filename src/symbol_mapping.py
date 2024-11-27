@@ -4,6 +4,9 @@ from vllm import LLM, SamplingParams
 import json
 import inspect
 import re
+import logging
+logger = logging.getLogger(__name__)
+
 
 
 def single_prompt_mapper(
@@ -164,9 +167,9 @@ def single_prompt_mapper(
 
     try:
         json_str = re.findall(r"\{\s*\"result\"(?:.|\s)*?\}", output)[-1]
-        return json.loads(json_str)["result"], output
+        return json.loads(json_str)["result"], output, prompt_content
     except Exception:
-        return None, output
+        return None, output, prompt_content
 
 
 # TODO: Currently this doesn't take into account any information about the symbols
