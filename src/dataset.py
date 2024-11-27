@@ -313,7 +313,7 @@ class GSM8KDataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         return [
             [None, self.data[index]["question"]],
-            int(self.data[index]["answer"].split("#### ")[-1]),
+            int(self.data[index]["answer"].split("#### ")[-1].replace(",", "")),
         ]
 
     def __len__(self):

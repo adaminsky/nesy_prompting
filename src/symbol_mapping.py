@@ -104,7 +104,7 @@ def single_prompt_mapper(
     prompt_content.append(
         {
             "type": "text",
-            "text": "Next, apply the following function to the symbols to get the output.",
+            "text": "Then, apply the following function to the symbols to get the output.",
         }
     )
     if isinstance(fn_desc, IOExamples):
@@ -161,7 +161,7 @@ def single_prompt_mapper(
     prompt_content.append(
         {
             "type": "text",
-            "text": 'Output the result in the following JSON format: {"result": <result>}.',
+            "text": 'Output the result of the function on the input in the following JSON format: {"result": <result>}.',
         }
     )
 
@@ -467,7 +467,7 @@ def prompting_mapper_structure(
     )
     inputs = processor(
         input, input_text, add_special_tokens=False, return_tensors="pt"
-    )#.to(model.device)
+    )  # .to(model.device)
     model_output = model.generate(
         **inputs, max_new_tokens=10, do_sample=False, temperature=None, top_p=None
     )
