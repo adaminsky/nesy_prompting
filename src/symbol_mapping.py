@@ -135,7 +135,7 @@ def single_prompt_mapper(
         )
 
     prompt_content.append(
-        {"type": "text", "text": "Input: "},
+        {"type": "text", "text": "\nInput: "},
     )
     if raw_input.text_input is not None and raw_input.image_input is None:
         prompt_content.append(
