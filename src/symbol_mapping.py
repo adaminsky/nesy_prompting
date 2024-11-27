@@ -20,7 +20,7 @@ def single_prompt_mapper(
     prompt_content.append(
         {
             "type": "text",
-            "text": "Given an input, compute the result following the steps below. ",
+            "text": "Given the input, compute the result by first extracting symbols and then applying a function to the symbols. ",
         }
     )
 
@@ -135,7 +135,7 @@ def single_prompt_mapper(
         )
 
     prompt_content.append(
-        {"type": "text", "text": "\nInput: "},
+        {"type": "text", "text": "\nThe input is: "},
     )
     if raw_input.text_input is not None and raw_input.image_input is None:
         prompt_content.append(
