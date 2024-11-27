@@ -16,9 +16,127 @@ def single_prompt_mapper(
     model: LLM,
 ):
     # Adding the input to the prompt
-    prompt_content = [
-        {"type": "text", "text": "The following is the test input:"},
-    ]
+    prompt_content = []
+    prompt_content.append(
+        {
+            "type": "text",
+            "text": "Given an input, compute the result following the steps below. ",
+        }
+    )
+
+    # Adding symbol description to the prompt
+    if isinstance(symbols, IOExamples):
+        prompt_content.append(
+            {
+                "type": "text",
+                "text": "First, convert the input to symbolic form. The following are examples of symbol extraction on other inputs:",
+            }
+        )
+        for i, (input, output) in enumerate(zip(symbols.inputs, symbols.outputs)):
+            symbol_str = ", ".join([json.dumps(o) for o in output])
+            if input.text_input is not None and input.image_input is None:
+                prompt_content.append(
+                    {
+                        "type": "text",
+                        "text": f"\nExample {i + 1}: {input.text_input}\nSymbols: {symbol_str}",
+                    }
+                )
+            elif input.text_input is None and input.image_input is not None:
+                prompt_content.extend(
+                    [
+                        {"type": "text", "text": f"\nExample {i + 1}: "},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{img2base64(input.image_input)}"
+                            },
+                        },
+                        {"type": "text", "text": f"\nSymbols: {symbol_str}"},
+                    ]
+                )
+            else:
+                prompt_content.extend(
+                    [
+                        {"type": "text", "text": f"\nExample {i + 1}: "},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{img2base64(input.image_input)}"
+                            },
+                        },
+                        {
+                            "type": "text",
+                            "text": f", {input.text_input}\nSymbols: {symbol_str}",
+                        },
+                    ]
+                )
+    elif isinstance(symbols, str):
+        prompt_content.append(
+            {"type": "text", "text": f"First, convert the input to symbolic form. The symbols extracted should be {symbols}."}
+        )
+    else:
+        prompt_content.append(
+            {
+                "type": "text",
+                "text": "First, convert the input to symbolic form.",
+            }
+        )
+
+    # Adding function description to the prompt
+    if isinstance(fn_desc, IOExamples):
+        prompt_content.append(
+            {
+                "type": "text",
+                "text": "\nAfter extracting symbols, apply the following function. Output the result in the format: {\"result\": <result>}. The following are input-output examples for the function:\n",
+            }
+        )
+        for i, (input, output) in enumerate(zip(fn_desc.inputs, fn_desc.outputs)):
+            if input.text_input is not None and input.image_input is None:
+                prompt_content.append(
+                    {
+                        "type": "text",
+                        "text": f"Example {i + 1}: {input.text_input}\nOutput: {{\"result\": {output[0]}}}\n",
+                    }
+                )
+            elif input.text_input is None and input.image_input is not None:
+                prompt_content.extend(
+                    [
+                        {"type": "text", "text": f"Example {i + 1}: "},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{img2base64(input.image_input)}"
+                            },
+                        },
+                        {"type": "text", "text": f"\nOutput: {{\"result\": {output[0]}}}\n"},
+                    ]
+                )
+            else:
+                prompt_content.extend(
+                    [
+                        {"type": "text", "text": f"Example {i + 1}: "},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{img2base64(input.image_input)}"
+                            },
+                        },
+                        {
+                            "type": "text",
+                            "text": f", {input.text_input}\nOutput: {{\"result\": {output[0]}}}\n",
+                        },
+                    ]
+                )
+    elif isinstance(fn_desc, str):
+        prompt_content.append({"type": "text", "text": f"\nAfter extracting symbols, apply the following function. The function is: {fn_desc}. Output the result in the format: {{\"result\": <result>}}."})
+    else:
+        prompt_content.append(
+            {"type": "text", "text": f"\nAfter extracting symbols, apply the following function. The function is:\n{inspect.getsource(fn_desc)}Output the result in the format: {{\"result\": <result>}}."}
+        )
+
+    prompt_content.append(
+        {"type": "text", "text": "Input: "},
+    )
     if raw_input.text_input is not None and raw_input.image_input is None:
         prompt_content.append(
             {"type": "text", "text": f"{raw_input.text_input}"}
@@ -43,118 +161,8 @@ def single_prompt_mapper(
                         "url": f"data:image/jpeg;base64,{img2base64(raw_input.image_input)}"
                     },
                 },
-                {"type": "text", "text": f"{raw_input.text_input}"},
+                {"type": "text", "text": f", {raw_input.text_input}"},
             ]
-        )
-
-    # Adding symbol description to the prompt
-    if isinstance(symbols, IOExamples):
-        prompt_content.append(
-            {
-                "type": "text",
-                "text": "First, convert the above input to symbolic form. The following are some examples:",
-            }
-        )
-        for i, (input, output) in enumerate(zip(symbols.inputs, symbols.outputs)):
-            symbol_str = ", ".join([json.dumps(o) for o in output])
-            if input.text_input is not None and input.image_input is None:
-                prompt_content.append(
-                    {
-                        "type": "text",
-                        "text": f"Example {i + 1}: {input.text_input}\nSymbols: {symbol_str}",
-                    }
-                )
-            elif input.text_input is None and input.image_input is not None:
-                prompt_content.extend(
-                    [
-                        {"type": "text", "text": f"Example {i + 1}:"},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{img2base64(input.image_input)}"
-                            },
-                        },
-                        {"type": "text", "text": f"Symbols: {symbol_str}"},
-                    ]
-                )
-            else:
-                prompt_content.extend(
-                    [
-                        {"type": "text", "text": f"Example {i + 1}:"},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{img2base64(input.image_input)}"
-                            },
-                        },
-                        {
-                            "type": "text",
-                            "text": f"{input.text_input}\nSymbols: {symbol_str}",
-                        },
-                    ]
-                )
-    elif isinstance(symbols, str):
-        prompt_content.append(
-            {"type": "text", "text": f"First, convert the above input to symbolic form. The symbols extracted should be {symbols}."}
-        )
-    else:
-        prompt_content.append(
-            {
-                "type": "text",
-                "text": "First, convert the above input to symbolic form.",
-            }
-        )
-
-    # Adding function description to the prompt
-    if isinstance(fn_desc, IOExamples):
-        prompt_content.append(
-            {
-                "type": "text",
-                "text": "Then, apply the following function to the symbols to get the output. Output the result in the format: {\"result\": <result>}. The following are some input-output examples to define the function:",
-            }
-        )
-        for i, (input, output) in enumerate(zip(fn_desc.inputs, fn_desc.outputs)):
-            if input.text_input is not None and input.image_input is None:
-                prompt_content.append(
-                    {
-                        "type": "text",
-                        "text": f"Example {i + 1}: {input.text_input}\nOutput: {{\"result\": {output[0]}}}",
-                    }
-                )
-            elif input.text_input is None and input.image_input is not None:
-                prompt_content.extend(
-                    [
-                        {"type": "text", "text": f"Example {i + 1}:"},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{img2base64(input.image_input)}"
-                            },
-                        },
-                        {"type": "text", "text": f"Output: {{\"result\": {output[0]}}}"},
-                    ]
-                )
-            else:
-                prompt_content.extend(
-                    [
-                        {"type": "text", "text": f"Example {i + 1}:"},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{img2base64(input.image_input)}"
-                            },
-                        },
-                        {
-                            "type": "text",
-                            "text": f"{input.text_input}\nOutput: {{\"result\": {output[0]}}}",
-                        },
-                    ]
-                )
-    elif isinstance(fn_desc, str):
-        prompt_content.append({"type": "text", "text": f"Then, apply the following function to the symbols to get the output. The function is: {fn_desc}. Output the result in the format: {{\"result\": <result>}}."})
-    else:
-        prompt_content.append(
-            {"type": "text", "text": f"Then, apply the following function to the symbols to get the output. The function is:\n{inspect.getsource(fn_desc)}. Output the result in the format: {{\"result\": <result>}}."}
         )
 
     prompt = [{"role": "user", "content": prompt_content}]

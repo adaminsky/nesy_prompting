@@ -39,3 +39,8 @@ def img2base64(img):
 
     img.save(buffer, format="JPEG")
     return base64.b64encode(buffer.getvalue()).decode()
+
+
+def base642img(base64_str):
+    imgdata = base64.b64decode(base64_str)
+    return Image.open(BytesIO(imgdata))

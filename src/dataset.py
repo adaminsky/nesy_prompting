@@ -106,14 +106,17 @@ class HWFDataset(torch.utils.data.Dataset):
             )
             img = Image.open(img_full_path).convert("L")
             img = self.img_transform(img)
-            img_seq.append(img)
+            img_seq.append(img[0])
         img_seq_len = len(img_seq)
+
+        img = np.concatenate(img_seq, axis=1)
+        img = Image.fromarray(img * 255)
 
         # Output is the "res" in the sample of metadata
         res = sample["res"]
 
         # Return (input, output) pair
-        return (img_seq, img_seq_len, res)
+        return ((img, None), res)
 
     def __len__(self):
         return len(self.metadata)
