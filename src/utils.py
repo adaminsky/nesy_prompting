@@ -17,6 +17,7 @@ class RawInput:
 class IOExamples:
     """Dataclass to store input-output examples for a function."""
 
+    description: str
     inputs: list[RawInput]
     outputs: list[list[Any]]
 

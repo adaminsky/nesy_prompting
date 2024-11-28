@@ -104,8 +104,9 @@ class HWFDataset(torch.utils.data.Dataset):
             img_full_path = os.path.join(
                 self.root, "HWF/Handwritten_Math_Symbols", img_path
             )
-            img = Image.open(img_full_path).convert("L")
+            img = Image.open(img_full_path)
             img = self.img_transform(img)
+            print(img.shape)
             img_seq.append(img[0])
         img_seq_len = len(img_seq)
 

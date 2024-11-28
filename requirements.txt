@@ -10,3 +10,4 @@ pre-commit
 wheel
 flash-attn
 vllm
+accelerate

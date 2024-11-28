@@ -20,7 +20,7 @@ def single_prompt_mapper(
     prompt_content.append(
         {
             "type": "text",
-            "text": "Given the input, compute the result by first extracting symbols and then applying a function to the symbols. ",
+            "text": "Analyze the provided input and think through the answer step-by-step. Once the final answer is found, write it at the end after \"FINAL ANSWER:\".",
         }
     )
 
@@ -29,7 +29,7 @@ def single_prompt_mapper(
         prompt_content.append(
             {
                 "type": "text",
-                "text": "First, convert the input to symbolic form. The following are examples of symbol extraction on other inputs:",
+                "text": f"First, convert the input to {symbols.description}. For example:",
             }
         )
         for i, (input, output) in enumerate(zip(symbols.inputs, symbols.outputs)):
@@ -38,26 +38,26 @@ def single_prompt_mapper(
                 prompt_content.append(
                     {
                         "type": "text",
-                        "text": f"\nExample {i + 1}: {input.text_input}\nSymbols: {symbol_str}",
+                        "text": f"\nExample input {i + 1}: {input.text_input}\nExample symbols {i + 1}: {symbol_str}",
                     }
                 )
             elif input.text_input is None and input.image_input is not None:
                 prompt_content.extend(
                     [
-                        {"type": "text", "text": f"\nExample {i + 1}: "},
+                        {"type": "text", "text": f"\nExample input {i + 1}: "},
                         {
                             "type": "image_url",
                             "image_url": {
                                 "url": f"data:image/jpeg;base64,{img2base64(input.image_input)}"
                             },
                         },
-                        {"type": "text", "text": f"\nSymbols: {symbol_str}"},
+                        {"type": "text", "text": f"\nExample symbols {i + 1}: {symbol_str}"},
                     ]
                 )
             else:
                 prompt_content.extend(
                     [
-                        {"type": "text", "text": f"\nExample {i + 1}: "},
+                        {"type": "text", "text": f"\nExample input {i + 1}: "},
                         {
                             "type": "image_url",
                             "image_url": {
@@ -66,19 +66,19 @@ def single_prompt_mapper(
                         },
                         {
                             "type": "text",
-                            "text": f", {input.text_input}\nSymbols: {symbol_str}",
+                            "text": f", {input.text_input}\nExample symbols {i + 1}: {symbol_str}",
                         },
                     ]
                 )
     elif isinstance(symbols, str):
         prompt_content.append(
-            {"type": "text", "text": f"First, convert the input to symbolic form. The symbols extracted should be {symbols}."}
+            {"type": "text", "text": f"First, convert the input to {symbols}."}
         )
     else:
         prompt_content.append(
             {
                 "type": "text",
-                "text": "First, convert the input to symbolic form.",
+                "text": "First, process the input to understand its contents.",
             }
         )
 
@@ -87,7 +87,7 @@ def single_prompt_mapper(
         prompt_content.append(
             {
                 "type": "text",
-                "text": "\nAfter extracting symbols, apply the following function. Output the result in the format: {\"result\": <result>}. The following are input-output examples for the function:\n",
+                "text": f"\nHere are some examples of the expected answer:\n",
             }
         )
         for i, (input, output) in enumerate(zip(fn_desc.inputs, fn_desc.outputs)):
@@ -95,7 +95,7 @@ def single_prompt_mapper(
                 prompt_content.append(
                     {
                         "type": "text",
-                        "text": f"Example {i + 1}: {input.text_input}\nOutput: {{\"result\": {output[0]}}}\n",
+                        "text": f"Example {i + 1}: {input.text_input}\nOutput: {output[0]}\n",
                     }
                 )
             elif input.text_input is None and input.image_input is not None:
@@ -108,7 +108,7 @@ def single_prompt_mapper(
                                 "url": f"data:image/jpeg;base64,{img2base64(input.image_input)}"
                             },
                         },
-                        {"type": "text", "text": f"\nOutput: {{\"result\": {output[0]}}}\n"},
+                        {"type": "text", "text": f"\nOutput: {output[0]}\n"},
                     ]
                 )
             else:
@@ -128,10 +128,10 @@ def single_prompt_mapper(
                     ]
                 )
     elif isinstance(fn_desc, str):
-        prompt_content.append({"type": "text", "text": f"\nAfter extracting symbols, apply the following function. The function is: {fn_desc}. Output the result in the format: {{\"result\": <result>}}."})
+        prompt_content.append({"type": "text", "text": f"\nTo compute the final answer, {fn_desc}."})
     else:
         prompt_content.append(
-            {"type": "text", "text": f"\nAfter extracting symbols, apply the following function. The function is:\n{inspect.getsource(fn_desc)}Output the result in the format: {{\"result\": <result>}}."}
+            {"type": "text", "text": f"\nTo compute the final answer, evaluate the following function:\n{inspect.getsource(fn_desc)}Write out each intermediate step in evaluating the function to get the answer."}
         )
 
     prompt_content.append(
@@ -164,6 +164,9 @@ def single_prompt_mapper(
                 {"type": "text", "text": f", {raw_input.text_input}"},
             ]
         )
+    # prompt_content.append(
+    #     {"type": "text", "text": ". IMPORTANT: Output the final answer directly like {\"answer\": <answer>} using JSON syntax."},
+    # )
 
     prompt = [{"role": "user", "content": prompt_content}]
     sampling_params = SamplingParams(temperature=0.0, max_tokens=2500, top_p=1.0)
@@ -173,9 +176,17 @@ def single_prompt_mapper(
         .text
     )
 
+    # Extracting the final answer from the output after "FINAL ANSWER:", "**FINAL ANSWER:**", or "*FINAL ANSWER:*"
     try:
-        json_str = re.findall(r"\{\s*\"result\"(?:.|\s)*?\}", output)[-1]
-        return json.loads(json_str)["result"], output, prompt_content
+        # json_str = re.findall(r"\{\s*\"answer\"(?:.|\s)*?\}", output)[-1]
+        # return json.loads(json_str)["answer"], output, prompt_content
+        if "**FINAL ANSWER:**" in output:
+            ans_str = re.findall(r"\*\*FINAL ANSWER:\*\*(.*)[<$]", output)[-1]
+        elif "*FINAL ANSWER:*" in output:
+            ans_str = re.findall(r"\*FINAL ANSWER:\*(.*)[<$]", output)[-1]
+        else:
+            ans_str = re.findall(r"FINAL ANSWER:(.*)[<$]", output)[-1]
+        return ans_str.strip(), output, prompt_content
     except Exception:
         return None, output, prompt_content
 
