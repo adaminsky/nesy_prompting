@@ -13,7 +13,7 @@ from .utils import IOExamples, RawInput
 logger = logging.getLogger(__name__)
 
 def replace_base64_urls(text):
-    pattern = r"\{'url': 'data:image/jpeg;base64.*?=='\}"
+    pattern = r"\{'url': 'data:image/jpeg;base64.*?(//|==)"
     return re.sub(pattern, 'OMITTED', text, flags=re.DOTALL)
 
 class Function:
@@ -40,7 +40,7 @@ class Function:
         output, log, prompt_content = self.single_prompt_mapper(args, self.args, self.fn, self.model)
         prompt_content = replace_base64_urls(str(prompt_content))
         if print_log:
-            # logger.info("Prompt: %s", prompt_content)
+            logger.info("Prompt: %s", prompt_content)
             logger.info("Output: %s", log)
 
         if return_symbols:
