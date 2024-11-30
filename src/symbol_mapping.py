@@ -123,7 +123,7 @@ def single_prompt_mapper(
                         },
                         {
                             "type": "text",
-                            "text": f", {input.text_input}\nOutput: {{\"result\": {output[0]}}}\n",
+                            "text": f", {input.text_input}\nOutput: {output[0]}\n",
                         },
                     ]
                 )
@@ -180,10 +180,16 @@ def single_prompt_mapper(
     try:
         # json_str = re.findall(r"\{\s*\"answer\"(?:.|\s)*?\}", output)[-1]
         # return json.loads(json_str)["answer"], output, prompt_content
-        if "**FINAL ANSWER:**" in output:
+        if "\[ \\boxed{" in output:
+            ans_str = re.findall(r"\[ \\boxed{(.*)}", output)[-1]
+        elif "**FINAL ANSWER:**" in output:
             ans_str = re.findall(r"\*\*FINAL ANSWER:\*\*(.*)[<$]", output)[-1]
         elif "*FINAL ANSWER:*" in output:
             ans_str = re.findall(r"\*FINAL ANSWER:\*(.*)[<$]", output)[-1]
+        elif "**Answer:**" in output:
+            ans_str = re.findall(r"\*\*Answer:\*\*(.*)[<$]", output)[-1]
+        elif "*Answer:*" in output:
+            ans_str = re.findall(r"\*Answer:(.*)[<$]", output)[-1]
         else:
             ans_str = re.findall(r"FINAL ANSWER:(.*)[<$]", output)[-1]
         return ans_str.strip(), output, prompt_content
