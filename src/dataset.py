@@ -5,6 +5,7 @@ import json
 import os
 from PIL import Image
 import numpy as np
+import re
 from datasets import load_dataset
 from typing import Optional, Callable
 
@@ -335,6 +336,54 @@ class ChartQADataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.data)
+
+
+class BlocksWorldDataset(torch.utils.data.Dataset):
+    def __init__(self, root="./data/mystery_blocksworld/"):
+        self.data_json = json.load(open(os.path.join(root, "task_1_plan_generation.json"), "r"))["instances"]
+
+    def __getitem__(self, index):
+        instruction = """Here are the actions I can do:
+- attack object
+- feast object from another object
+- succumb object
+- overcome object from another object
+   
+I have the following restrictions on my actions:
+- To perform attack action, the following facts need to be true: province object, planet object, harmony.
+- Once attack action is performed the following facts will be true: pain object.
+- Once attack action is performed the following facts will be false: province object, planet object, harmony.
+- To perform succumb action, the following facts need to be true: Pain object.
+- Once succumb action is performed the following facts will be true: province object, planet object, harmony.
+- Once succumb action is performed the following facts will be false: pain object.
+- To perform overcome action, the following needs to be true: province other object, pain object.
+- Once overcome action is performed the following will be true: harmony, province object, object craves other object.
+- Once overcome action is performed the following will be false: province other object, pain object.
+- To perform feast action, the following needs to be true: object craves other object, province object, harmony.
+- Once feast action is performed the following will be true: pain object, province other object.
+- Once feast action is performed the following will be false:, object craves other object, province object, harmony."""
+
+#         example = """As initial conditions I have that, object b craves object a, object c craves object d, object d craves object b, harmony, planet object a and province object c.
+# My goal is to have that object b craves object c and object c craves object d.
+# My plan is as follows:
+# (feast c d)
+# (succumb c)
+# (feast d b)
+# (succumb d)
+# (attack c)
+# (overcome c d)
+# (feast b a)
+# (overcome b c)"""
+
+        raw_prompt = self.data_json[index]["query"]
+        query = re.findall(r"\[STATEMENT\](.*?)My plan is as follows:\n\n\[PLAN\]", raw_prompt, re.DOTALL)[-1].strip()
+
+        prompt = f"{instruction}\n\nQuery: {query}"
+
+        return (None, prompt), self.data_json[index]["ground_truth_plan"]
+
+    def __len__(self):
+        return len(self.data_json)
 
 
 def main():

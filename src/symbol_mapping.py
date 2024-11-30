@@ -29,7 +29,7 @@ def single_prompt_mapper(
         prompt_content.append(
             {
                 "type": "text",
-                "text": f"First, convert the input to {symbols.description}. For example:",
+                "text": f" First, convert the input to {symbols.description}. For example:",
             }
         )
         for i, (input, output) in enumerate(zip(symbols.inputs, symbols.outputs)):
@@ -72,13 +72,13 @@ def single_prompt_mapper(
                 )
     elif isinstance(symbols, str):
         prompt_content.append(
-            {"type": "text", "text": f"First, convert the input to {symbols}."}
+            {"type": "text", "text": f" First, convert the input to {symbols}."}
         )
     else:
         prompt_content.append(
             {
                 "type": "text",
-                "text": "First, process the input to understand its contents.",
+                "text": " First, process the input to understand its contents.",
             }
         )
 

@@ -37,3 +37,7 @@ place under `data/CLEVR_v1.0`.
 #### Pathfinder
 
 Download my version of the code and then follow the instructions in the README.
+
+#### Mystery Blocksworld
+
+Download from [here](https://raw.githubusercontent.com/karthikv792/LLMs-Planning/refs/heads/main/plan-bench/prompts/mystery_blocksworld/task_1_plan_generation.json).
