@@ -69,11 +69,20 @@ def eval_solution(problem: str, domain: str, solution: str):
     except Exception as e:
         os.remove(domain_file)
         os.remove(problem_file)
-        print(e)
-
         return False
 
     os.remove(domain_file)
     os.remove(problem_file)
+
+    return is_valid
+
+
+def eval_solution_files(problem_file: str, domain_file: str, solution: str):
+    # evaluate the solution
+    try:
+        dp = pddlpy.DomainProblem(domain_file, problem_file)
+        is_valid = validate_plan(solution, dp)
+    except Exception as e:
+        return False
 
     return is_valid

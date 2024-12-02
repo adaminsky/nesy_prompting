@@ -131,7 +131,7 @@ def single_prompt_mapper(
         prompt_content.append({"type": "text", "text": f"\nTo compute the final answer, {fn_desc}."})
     else:
         prompt_content.append(
-            {"type": "text", "text": f"\nTo compute the final answer, evaluate the following function:\n{inspect.getsource(fn_desc)}Write out each intermediate step in evaluating the function to get the answer."}
+            {"type": "text", "text": f"\nTo compute the final answer, evaluate the following function:\n{inspect.getsource(fn_desc)}Evaluate the code as accurately as possible and write out each intermediate step in evaluating the function to get the answer."}
         )
 
     prompt_content.append(
@@ -183,15 +183,15 @@ def single_prompt_mapper(
         if "\[ \\boxed{" in output:
             ans_str = re.findall(r"\[ \\boxed{(.*)}", output)[-1]
         elif "**FINAL ANSWER:**" in output:
-            ans_str = re.findall(r"\*\*FINAL ANSWER:\*\*(.*)[<$]", output)[-1]
+            ans_str = re.findall(r"\*\*FINAL ANSWER:\*\*(.*)[<\n$]", output)[-1]
         elif "*FINAL ANSWER:*" in output:
-            ans_str = re.findall(r"\*FINAL ANSWER:\*(.*)[<$]", output)[-1]
+            ans_str = re.findall(r"\*FINAL ANSWER:\*(.*)[<\n$]", output)[-1]
         elif "**Answer:**" in output:
-            ans_str = re.findall(r"\*\*Answer:\*\*(.*)[<$]", output)[-1]
+            ans_str = re.findall(r"\*\*Answer:\*\*(.*)[<\n$]", output)[-1]
         elif "*Answer:*" in output:
-            ans_str = re.findall(r"\*Answer:(.*)[<$]", output)[-1]
+            ans_str = re.findall(r"\*Answer:(.*)[<\n$]", output)[-1]
         else:
-            ans_str = re.findall(r"FINAL ANSWER:(.*)[<$]", output)[-1]
+            ans_str = re.findall(r"FINAL ANSWER:(.*)[<\n$]", output)[-1]
         return ans_str.strip(), output, prompt_content
     except Exception:
         return None, output, prompt_content
