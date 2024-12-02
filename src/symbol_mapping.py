@@ -169,7 +169,7 @@ def single_prompt_mapper(
     # )
 
     prompt = [{"role": "user", "content": prompt_content}]
-    sampling_params = SamplingParams(temperature=0.0, max_tokens=2500, top_p=1.0)
+    sampling_params = SamplingParams(temperature=0.0, max_tokens=5000, top_p=1.0)
     output = (
         model.chat(prompt, sampling_params=sampling_params, use_tqdm=False)[0]
         .outputs[0]
