@@ -29,7 +29,7 @@ def single_prompt_mapper(
         prompt_content.append(
             {
                 "type": "text",
-                "text": f" First, convert the input to {symbols.description}. For example:",
+                "text": f" Based on the input, define {symbols.description}. For example:",
             }
         )
         for i, (input, output) in enumerate(zip(symbols.inputs, symbols.outputs)):
@@ -38,7 +38,7 @@ def single_prompt_mapper(
                 prompt_content.append(
                     {
                         "type": "text",
-                        "text": f"\nExample input {i + 1}: {input.text_input}\nExample symbols {i + 1}: {symbol_str}",
+                        "text": f"\nExample input {i + 1}: {input.text_input}\nExtracted symbols {i + 1}: {symbol_str}",
                     }
                 )
             elif input.text_input is None and input.image_input is not None:
@@ -51,7 +51,7 @@ def single_prompt_mapper(
                                 "url": f"data:image/jpeg;base64,{img2base64(input.image_input)}"
                             },
                         },
-                        {"type": "text", "text": f"\nExample symbols {i + 1}: {symbol_str}"},
+                        {"type": "text", "text": f"\nExtracted symbols {i + 1}: {symbol_str}"},
                     ]
                 )
             else:
@@ -66,28 +66,29 @@ def single_prompt_mapper(
                         },
                         {
                             "type": "text",
-                            "text": f", {input.text_input}\nExample symbols {i + 1}: {symbol_str}",
+                            "text": f", {input.text_input}\nExtracted symbols {i + 1}: {symbol_str}",
                         },
                     ]
                 )
     elif isinstance(symbols, str):
         prompt_content.append(
-            {"type": "text", "text": f" First, convert the input to {symbols}."}
+            {"type": "text", "text": f" Based on the input, define {symbols}."}
         )
     else:
-        prompt_content.append(
-            {
-                "type": "text",
-                "text": " First, process the input to understand its contents.",
-            }
-        )
+        pass
+        # prompt_content.append(
+        #     {
+        #         "type": "text",
+        #         "text": " First, process the input to understand its contents.",
+        #     }
+        # )
 
     # Adding function description to the prompt
     if isinstance(fn_desc, IOExamples):
         prompt_content.append(
             {
                 "type": "text",
-                "text": f"\nHere are some examples of the expected answer:\n",
+                "text": f"\nThe following are some examples of the expected answer:\n",
             }
         )
         for i, (input, output) in enumerate(zip(fn_desc.inputs, fn_desc.outputs)):
@@ -95,7 +96,7 @@ def single_prompt_mapper(
                 prompt_content.append(
                     {
                         "type": "text",
-                        "text": f"Example {i + 1}: {input.text_input}\nOutput: {output[0]}\n",
+                        "text": f"Example {i + 1}: {input.text_input}\nAnswer: {output[0]}\n",
                     }
                 )
             elif input.text_input is None and input.image_input is not None:
@@ -108,7 +109,7 @@ def single_prompt_mapper(
                                 "url": f"data:image/jpeg;base64,{img2base64(input.image_input)}"
                             },
                         },
-                        {"type": "text", "text": f"\nOutput: {output[0]}\n"},
+                        {"type": "text", "text": f"\nAnswer: {output[0]}\n"},
                     ]
                 )
             else:
@@ -123,15 +124,15 @@ def single_prompt_mapper(
                         },
                         {
                             "type": "text",
-                            "text": f", {input.text_input}\nOutput: {output[0]}\n",
+                            "text": f", {input.text_input}\nAnswer: {output[0]}\n",
                         },
                     ]
                 )
     elif isinstance(fn_desc, str):
-        prompt_content.append({"type": "text", "text": f"\nTo compute the final answer, {fn_desc}."})
+        prompt_content.append({"type": "text", "text": f"\nTo derive the final answer, {fn_desc}. Write out all intermediate steps to get the answer."})
     else:
         prompt_content.append(
-            {"type": "text", "text": f"\nTo compute the final answer, evaluate the following function:\n{inspect.getsource(fn_desc)}Evaluate the code as accurately as possible and write out each intermediate step in evaluating the function to get the answer."}
+            {"type": "text", "text": f"\nTo derive the final answer, evaluate the following function:\n{inspect.getsource(fn_desc)}Write out all intermediate steps to get the answer."}
         )
 
     prompt_content.append(

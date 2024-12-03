@@ -386,6 +386,17 @@ I have the following restrictions on my actions:
         return len(self.data_json)
 
 
+class BBHDataset(torch.utils.data.Dataset):
+    def __init__(self, subset):
+        self.data = load_dataset("maveriq/bigbenchhard", subset, split="train")
+
+    def __getitem__(self, index):
+        return (None, self.data[index]["input"]), self.data[index]["target"]
+
+    def __len__(self):
+        return len(self.data)
+
+
 def main():
     d = ClevrDataset(
         "./data/CLEVR_v1.0/questions/CLEVR_train_questions.json",
