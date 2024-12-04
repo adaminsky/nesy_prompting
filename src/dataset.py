@@ -395,15 +395,47 @@ class BBHDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.data)
+    
+class FOLIODataset(torch.utils.data.Dataset):
+    def __init__(self, split='train', transform=None):
+        # Load the specified split of the dataset
+        self.dataset = load_dataset("yale-nlp/FOLIO", split=split)
+        self.transform = transform
+
+    def __len__(self):
+        # Return the total number of samples
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        # Get the sample at the specified index
+        item = self.dataset[idx]
+
+        # Extract the relevant fields
+        # sample = {
+        #     'story_id': item['story_id'],
+        #     'premises': item['premises'],
+        #     'premises_FOL': item['premises-FOL'],
+        #     'conclusion': item['conclusion'],
+        #     'conclusion_FOL': item['conclusion-FOL'],
+        #     'label': item['label'],
+        #     'example_id': item['example_id']
+        # }
+        image = None
+        question = f"Premise: {item['premises']} Conclusion: {item['conclusion']}  Is the conclusion True, False, or Uncertain? Choose one."
+        answer = item['label']
+        metadata = f"Premise: {item['premises-FOL']} Conclusion: {item['conclusion-FOL']}"
+
+        sample = [
+            [image, question],
+            answer,
+            metadata
+        ]
+
+        return sample
 
 
 def main():
-    d = ClevrDataset(
-        "./data/CLEVR_v1.0/questions/CLEVR_train_questions.json",
-        "./data/CLEVR_v1.0/images/train/",
-        "./data/CLEVR_v1.0/scenes/CLEVR_train_scenes.json",
-        max_samples=100,
-    )
+    d = FOLIODataset()
     d[0]
 
 

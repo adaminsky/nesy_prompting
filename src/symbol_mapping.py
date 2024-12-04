@@ -33,7 +33,7 @@ def single_prompt_mapper(
             }
         )
         for i, (input, output) in enumerate(zip(symbols.inputs, symbols.outputs)):
-            symbol_str = ", ".join([json.dumps(o) for o in output])
+            symbol_str = ", ".join([json.dumps(o).encode('utf-8').decode('unicode_escape') for o in output])
             if input.text_input is not None and input.image_input is None:
                 prompt_content.append(
                     {
