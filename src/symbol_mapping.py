@@ -33,7 +33,7 @@ def single_prompt_mapper(
             }
         )
         for i, (input, output) in enumerate(zip(symbols.inputs, symbols.outputs)):
-            symbol_str = ", ".join([json.dumps(o) for o in output])
+            symbol_str = ", ".join([json.dumps(o).encode('utf-8').decode('unicode_escape') for o in output])
             if input.text_input is not None and input.image_input is None:
                 prompt_content.append(
                     {
@@ -184,7 +184,7 @@ def single_prompt_mapper(
         if "\[ \\boxed{" in output:
             ans_str = re.findall(r"\[ \\boxed{(.*)}", output)[-1]
         elif "**FINAL ANSWER:**" in output:
-            ans_str = re.findall(r"\*\*FINAL ANSWER:\*\*(.*)[<\n$]", output)[-1]
+            ans_str = re.findall(r"\*\*FINAL ANSWER:\*\*\n*([\s\S]*?)[<\n$]", output)[-1]
         elif "*FINAL ANSWER:*" in output:
             ans_str = re.findall(r"\*FINAL ANSWER:\*(.*)[<\n$]", output)[-1]
         elif "**Answer:**" in output:
@@ -193,6 +193,8 @@ def single_prompt_mapper(
             ans_str = re.findall(r"\*Answer:(.*)[<\n$]", output)[-1]
         else:
             ans_str = re.findall(r"FINAL ANSWER:(.*)[<\n$]", output)[-1]
+        if type(ans_str) == tuple:
+            ans_str = ans_str[-1]
         return ans_str.strip(), output, prompt_content
     except Exception:
         return None, output, prompt_content
