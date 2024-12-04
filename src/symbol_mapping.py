@@ -182,17 +182,20 @@ def single_prompt_mapper(
         # json_str = re.findall(r"\{\s*\"answer\"(?:.|\s)*?\}", output)[-1]
         # return json.loads(json_str)["answer"], output, prompt_content
         if "\[ \\boxed{" in output:
-            ans_str = re.findall(r"\[ \\boxed{(.*)}", output)[-1]
+            ans_str = re.findall(r"\[ \\boxed{(.*)}", output, re.DOTALL)[-1]
         elif "**FINAL ANSWER:**" in output:
-            ans_str = re.findall(r"\*\*FINAL ANSWER:\*\*(.*)[<\n$]", output)[-1]
+            ans_str = re.findall(r"\*\*FINAL ANSWER:\*\*(.*)(?:<|$)", output, re.DOTALL)[-1]
         elif "*FINAL ANSWER:*" in output:
-            ans_str = re.findall(r"\*FINAL ANSWER:\*(.*)[<\n$]", output)[-1]
+            ans_str = re.findall(r"\*FINAL ANSWER:\*(.*)(?:<|$)", output, re.DOTALL)[-1]
         elif "**Answer:**" in output:
-            ans_str = re.findall(r"\*\*Answer:\*\*(.*)[<\n$]", output)[-1]
+            ans_str = re.findall(r"\*\*Answer:\*\*(.*)(?:<|$)", output, re.DOTALL)[-1]
         elif "*Answer:*" in output:
-            ans_str = re.findall(r"\*Answer:(.*)[<\n$]", output)[-1]
+            ans_str = re.findall(r"\*Answer:(.*)(?:<|$)", output, re.DOTALL)[-1]
         else:
-            ans_str = re.findall(r"FINAL ANSWER:(.*)[<\n$]", output)[-1]
+            ans_str = re.findall(r"FINAL ANSWER:(.*)(?:<|$)", output, re.DOTALL)[-1]
+
+        if "```" in ans_str:
+            ans_str = re.findall(r"```(.*)```", ans_str, re.DOTALL)[-1]
         return ans_str.strip(), output, prompt_content
     except Exception:
         return None, output, prompt_content
