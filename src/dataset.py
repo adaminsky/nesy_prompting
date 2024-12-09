@@ -267,6 +267,15 @@ class ClevrDataset(torch.utils.data.Dataset):
                     i.pop("3d_coords")
                     i.pop("pixel_coords")
 
+        # remove yes/no questions
+        keep_idx = [True if ans != "yes" and ans != "no" else False for ans in self.all_answers]
+        self.all_questions = [self.all_questions[i] for i in range(len(self.all_questions)) if keep_idx[i]]
+        self.all_image_idxs = [self.all_image_idxs[i] for i in range(len(self.all_image_idxs)) if keep_idx[i]]
+        self.all_programs = [self.all_programs[i] for i in range(len(self.all_programs)) if keep_idx[i]]
+        self.all_answers = [self.all_answers[i] for i in range(len(self.all_answers)) if keep_idx[i]]
+        if self.all_scenes is not None:
+            self.all_scenes = [self.all_scenes[i] for i in range(len(self.all_scenes)) if keep_idx[i]]
+
     def __getitem__(self, index):
         question = self.all_questions[index]
         image_idx = self.all_image_idxs[index]

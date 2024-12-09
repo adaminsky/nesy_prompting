@@ -128,12 +128,17 @@ def single_prompt_mapper(
                         },
                     ]
                 )
+            # prompt_content.append({"type": "text", "text": f"\nWrite a Python function to compute the final answer."})
     elif isinstance(fn_desc, str):
-        prompt_content.append({"type": "text", "text": f"\nTo derive the final answer, {fn_desc}. Write out all intermediate steps to get the answer."})
+        prompt_content.append({"type": "text", "text": f"\nTo derive the final answer write and then simulate Python code to {fn_desc}. Write out all intermediate steps to get the answer."})
+        # prompt_content.append({"type": "text", "text": f"\nTo derive the final answer, write a Python function to {fn_desc}."})
     else:
         prompt_content.append(
-            {"type": "text", "text": f"\nTo derive the final answer, evaluate the following function:\n{inspect.getsource(fn_desc)}Write out all intermediate steps to get the answer."}
+            {"type": "text", "text": f"\nTo derive the final answer, simulate the following Python function:\n{inspect.getsource(fn_desc)}Write out all intermediate steps in simulating the program to get the answer."}
         )
+        # prompt_content.append(
+        #     {"type": "text", "text": f"\nTo derive the final answer, we will call the following function:\n{inspect.getsource(fn_desc)}"}
+        # )
 
     prompt_content.append(
         {"type": "text", "text": "\nThe input is: "},
@@ -191,6 +196,10 @@ def single_prompt_mapper(
             ans_str = re.findall(r"\*\*Answer:\*\*(.*)(?:<|$)", output, re.DOTALL)[-1]
         elif "*Answer:*" in output:
             ans_str = re.findall(r"\*Answer:(.*)(?:<|$)", output, re.DOTALL)[-1]
+        elif "**Answer**:" in output:
+            ans_str = re.findall(r"\*\*Answer\*\*:(.*)(?:<|$)", output, re.DOTALL)[-1]
+        elif "*Answer*:" in output:
+            ans_str = re.findall(r"\*Answer\*:(.*)(?:<|$)", output, re.DOTALL)[-1]
         else:
             ans_str = re.findall(r"FINAL ANSWER:(.*)(?:<|$)", output, re.DOTALL)[-1]
 
@@ -198,7 +207,7 @@ def single_prompt_mapper(
             ans_str = re.findall(r"```(.*)```", ans_str, re.DOTALL)[-1]
         return ans_str.strip(), output, prompt_content
     except Exception:
-        return None, output, prompt_content
+        return "None", output, prompt_content
 
 
 # TODO: Currently this doesn't take into account any information about the symbols
