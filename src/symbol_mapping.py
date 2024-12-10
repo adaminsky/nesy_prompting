@@ -182,9 +182,9 @@ def code_mapper(
             ans_str = re.findall(r"\[ \\boxed{(.*)}", output, re.DOTALL)[-1]
 
         if "```python" in output:
-            ans_str = re.findall(r"```python(.*)```", output, re.DOTALL)[-1]
+            ans_str = re.findall(r"```python(.*?)```", output, re.DOTALL)[-1]
         elif "```" in output:
-            ans_str = re.findall(r"```(.*)```", output, re.DOTALL)[-1]
+            ans_str = re.findall(r"```(.*?)```", output, re.DOTALL)[-1]
 
         return ans_str.strip(), output, prompt_content
     except Exception:

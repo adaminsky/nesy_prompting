@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 from io import BytesIO
 import base64
+import contextlib
 from PIL import Image
 
 
@@ -45,3 +46,13 @@ def img2base64(img):
 def base642img(base64_str):
     imgdata = base64.b64decode(base64_str)
     return Image.open(BytesIO(imgdata))
+
+
+def eval_extracted_code(code):
+    try:
+        locs = {'__name__':'__main__'}
+        with contextlib.redirect_stdout(None):
+            exec(code, locs, locs)
+        return locs["answer"]
+    except Exception as e:
+        return "None"
