@@ -404,6 +404,22 @@ class BBHDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.data)
+
+class LongSortDataset(torch.utils.data.Dataset):
+    def __init__(self):
+        # generate lists of 20 random integers between 0 and 9
+        np.random.seed(0)
+        self.data = [{"input": np.random.randint(0, 10, 20).tolist()} for _ in range(400)]
+        # add the sorted version of the list as the target
+        for d in self.data:
+            d["target"] = sorted(d["input"])
+
+    def __getitem__(self, index):
+        template = "Sort the numbers from least to greatest defined by the following digits: {}"
+        return (None, template.format("".join(map(str, self.data[index]["input"])))), self.data[index]["target"]
+
+    def __len__(self):
+        return len(self.data)
     
 class FOLIODataset(torch.utils.data.Dataset):
     def __init__(self, split='train', transform=None):
