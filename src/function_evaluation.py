@@ -1,4 +1,7 @@
 from vllm import LLM, SamplingParams
+import re
+import contextlib
+import timeout_decorator
 
 
 def llm_simulate(code: str, model: LLM):
@@ -19,10 +22,20 @@ def llm_simulate(code: str, model: LLM):
     return output
 
 
+@timeout_decorator.timeout(2)
+def my_exec(code, locs):
+    exec(code, locs, locs)
+
+
 def python_eval(code: str):
     try:
-        locs = {}
-        exec(code, locs, locs)
+        if "main():" in code:
+            code = code.replace("if __name__ == '__main__':\n    main()", "    return answer\nif __name__ == '__main__':\n    answer = main()")
+            code = code.replace("if __name__ == \"__main__\":\n    main()", "    return answer\nif __name__ == '__main__':\n    answer = main()")
+            code = "answer = None\n" + code
+        locs = {'__name__':'__main__'}
+        with contextlib.redirect_stdout(None):
+            my_exec(code, locs)
         return locs["answer"]
     except Exception as e:
         return "None"

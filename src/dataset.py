@@ -407,9 +407,12 @@ class BBHDataset(torch.utils.data.Dataset):
 
 class LongSortDataset(torch.utils.data.Dataset):
     def __init__(self):
-        # generate lists of 20 random integers between 0 and 9
+        # generate lists of random integers between 0 and 9 of length 2-20
         np.random.seed(0)
-        self.data = [{"input": np.random.randint(0, 10, 20).tolist()} for _ in range(400)]
+        self.data = []
+        for _ in range(400):
+            length = np.random.randint(2, 21)
+            self.data.append({"input": np.random.randint(0, 10, length).tolist()})
         # add the sorted version of the list as the target
         for d in self.data:
             d["target"] = sorted(d["input"])
