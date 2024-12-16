@@ -19,7 +19,7 @@ def code_mapper(
     prompt_content.append(
         {
             "type": "text",
-            "text": "Analyze the provided input and output self-contained Python code at the end enclosed in a markdown code block such that executing the code stores the answer in the variable 'answer'.",
+            "text": "Analyze the provided input and output self-contained Python code at the end enclosed in a markdown code block such that executing the code stores the answer in the variable 'answer'. Do not use a main() function.",
         }
     )
 
@@ -83,54 +83,53 @@ def code_mapper(
         # )
 
     # Adding function description to the prompt
-    # if isinstance(fn_desc, IOExamples):
-    #     prompt_content.append(
-    #         {
-    #             "type": "text",
-    #             "text": f"\nThe following are some examples of the expected answer:\n",
-    #         }
-    #     )
-    #     for i, (input, output) in enumerate(zip(fn_desc.inputs, fn_desc.outputs)):
-    #         if input.text_input is not None and input.image_input is None:
-    #             prompt_content.append(
-    #                 {
-    #                     "type": "text",
-    #                     "text": f"Example {i + 1}: {input.text_input}\nAnswer: {output[0]}\n",
-    #                 }
-    #             )
-    #         elif input.text_input is None and input.image_input is not None:
-    #             prompt_content.extend(
-    #                 [
-    #                     {"type": "text", "text": f"Example {i + 1}: "},
-    #                     {
-    #                         "type": "image_url",
-    #                         "image_url": {
-    #                             "url": f"data:image/jpeg;base64,{img2base64(input.image_input)}"
-    #                         },
-    #                     },
-    #                     {"type": "text", "text": f"\nAnswer: {output[0]}\n"},
-    #                 ]
-    #             )
-    #         else:
-    #             prompt_content.extend(
-    #                 [
-    #                     {"type": "text", "text": f"Example {i + 1}: "},
-    #                     {
-    #                         "type": "image_url",
-    #                         "image_url": {
-    #                             "url": f"data:image/jpeg;base64,{img2base64(input.image_input)}"
-    #                         },
-    #                     },
-    #                     {
-    #                         "type": "text",
-    #                         "text": f", {input.text_input}\nAnswer: {output[0]}\n",
-    #                     },
-    #                 ]
-    #             )
-    # elif isinstance(fn_desc, str):
-    #     prompt_content.append({"type": "text", "text": f"\nTo derive the final answer, write a Python function to {fn_desc}."})
-    # else:
-    if not isinstance(fn_desc, str) and not isinstance(fn_desc, IOExamples):
+    if isinstance(fn_desc, IOExamples):
+        prompt_content.append(
+            {
+                "type": "text",
+                "text": f"\nTo derive the final answer, write Python code. The following are some examples of the expected answer:\n",
+            }
+        )
+        for i, (input, output) in enumerate(zip(fn_desc.inputs, fn_desc.outputs)):
+            if input.text_input is not None and input.image_input is None:
+                prompt_content.append(
+                    {
+                        "type": "text",
+                        "text": f"Example {i + 1}: {input.text_input}\nAnswer: {output[0]}\n",
+                    }
+                )
+            elif input.text_input is None and input.image_input is not None:
+                prompt_content.extend(
+                    [
+                        {"type": "text", "text": f"Example {i + 1}: "},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{img2base64(input.image_input)}"
+                            },
+                        },
+                        {"type": "text", "text": f"\nAnswer: {output[0]}\n"},
+                    ]
+                )
+            else:
+                prompt_content.extend(
+                    [
+                        {"type": "text", "text": f"Example {i + 1}: "},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{img2base64(input.image_input)}"
+                            },
+                        },
+                        {
+                            "type": "text",
+                            "text": f", {input.text_input}\nAnswer: {output[0]}\n",
+                        },
+                    ]
+                )
+    elif isinstance(fn_desc, str):
+        prompt_content.append({"type": "text", "text": f"\nTo derive the final answer, write a Python function to {fn_desc}."})
+    else:
         prompt_content.append(
             {"type": "text", "text": f"\nTo derive the final answer, call the following function:\n{inspect.getsource(fn_desc)}Include the above function in the code block."},
         )
