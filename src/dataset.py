@@ -6,6 +6,8 @@ import os
 from PIL import Image
 import numpy as np
 import re
+from wonderwords import RandomWord
+import random
 from datasets import load_dataset
 from typing import Optional, Callable
 
@@ -407,19 +409,21 @@ class BBHDataset(torch.utils.data.Dataset):
 
 class LongSortDataset(torch.utils.data.Dataset):
     def __init__(self):
-        # generate lists of random integers between 0 and 9 of length 2-20
+        # generate lists of random words of length 5-50
         np.random.seed(0)
+        random.seed(0)
+        r = RandomWord()
         self.data = []
         for _ in range(400):
-            length = np.random.randint(2, 21)
-            self.data.append({"input": np.random.randint(0, 10, length).tolist()})
+            length = np.random.randint(5, 51)
+            self.data.append({"input": [r.word() for _ in range(length)]})
         # add the sorted version of the list as the target
         for d in self.data:
             d["target"] = sorted(d["input"])
 
     def __getitem__(self, index):
-        template = "Sort the numbers from least to greatest defined by the following digits: {}"
-        return (None, template.format("".join(map(str, self.data[index]["input"])))), self.data[index]["target"]
+        template = "Sort the following words in alphabetical order: {}"
+        return (None, template.format(", ".join(map(str, self.data[index]["input"])))), self.data[index]["target"]
 
     def __len__(self):
         return len(self.data)

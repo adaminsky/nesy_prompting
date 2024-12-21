@@ -12,3 +12,4 @@ flash-attn
 vllm
 accelerate
 pddlpy
+wonderwords
