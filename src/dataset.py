@@ -10,6 +10,7 @@ from wonderwords import RandomWord
 import random
 from datasets import load_dataset
 from typing import Optional, Callable
+import torch
 
 logger = logging.getLogger(__name__)
 
@@ -408,18 +409,28 @@ class BBHDataset(torch.utils.data.Dataset):
         return len(self.data)
 
 class LongSortDataset(torch.utils.data.Dataset):
-    def __init__(self):
-        # generate lists of random words of length 5-50
-        np.random.seed(0)
-        random.seed(0)
-        r = RandomWord()
-        self.data = []
-        for _ in range(400):
-            length = np.random.randint(5, 51)
-            self.data.append({"input": [r.word() for _ in range(length)]})
-        # add the sorted version of the list as the target
-        for d in self.data:
-            d["target"] = sorted(d["input"])
+    def __init__(self, dir="./"):
+        if not os.path.exists(f"{dir}/data/long_sort.json"):
+            # generate lists of random words of length 5-50
+            np.random.seed(0)
+            random.seed(0)
+            torch.manual_seed(0)
+            lengths = np.random.randint(5, 51, size=400)
+            r = RandomWord()
+
+            self.data = []
+            for i in range(400):
+                self.data.append({"input": r.random_words(amount=lengths[i])})
+            for d in self.data:
+                d["target"] = sorted(d["input"])
+
+            # save to json
+            with open(f"{dir}/data/long_sort.json", "w") as f:
+                json.dump(self.data, f)
+        else:
+            with open(f"{dir}/data/long_sort.json", "r") as f:
+                self.data = json.load(f)
+
 
     def __getitem__(self, index):
         template = "Sort the following words in alphabetical order: {}"
@@ -467,8 +478,10 @@ class FOLIODataset(torch.utils.data.Dataset):
 
 
 def main():
-    d = FOLIODataset()
-    d[0]
+    # d = FOLIODataset()
+    # d[0]
+    d = LongSortDataset()
+    print(d[101])
 
 
 if __name__ == "__main__":
