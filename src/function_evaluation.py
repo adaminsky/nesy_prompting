@@ -61,15 +61,17 @@ def run_with_timeout(code, timeout):
 
 def python_eval(code: str):
     try:
-        if "main():" in code:
+        if "if __name__ == '__main__'" in code:
             code = code.replace("if __name__ == '__main__':\n    main()", "    return answer\nif __name__ == '__main__':\n    answer = main()")
             code = code.replace("if __name__ == \"__main__\":\n    main()", "    return answer\nif __name__ == '__main__':\n    answer = main()")
             code = "answer = None\n" + code
-        # print(code)
-        with contextlib.redirect_stdout(None):
+        if "main():" in code:
+            code += "\nmain()"
+        # with contextlib.redirect_stdout(None):
             # my_exec(code, locs)
-            return run_with_timeout(code, 0.5)
+        return run_with_timeout(code, 10)
         # return locs["answer"]
     except Exception as e:
+        print("Exception:", e)
         return "None"
 

@@ -84,6 +84,7 @@ def eval_solution_files(problem_file: str, domain_file: str, solution: str):
         dp = pddlpy.DomainProblem(domain_file, problem_file)
         is_valid = validate_plan(solution, dp)
     except Exception as e:
+        print("Eval pddl error:", e)
         return False
 
     return is_valid

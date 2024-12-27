@@ -11,6 +11,7 @@ import random
 from datasets import load_dataset
 from typing import Optional, Callable
 import torch
+from src.program_gen import demonstrate_generator
 
 logger = logging.getLogger(__name__)
 
@@ -475,6 +476,20 @@ class FOLIODataset(torch.utils.data.Dataset):
         ]
 
         return sample
+
+
+class ListSynthesisDataset(torch.utils.data.Dataset):
+    def __init__(self):
+        self.data = demonstrate_generator()
+
+    def __getitem__(self, index):
+        return (None, self.data[index][0]), self.data[index][1]
+
+    def __len__(self):
+        return len(self.data)
+
+    def check_correct(self, index, fn):
+        return all([fn(*ex) == out for ex, out in self.data[index][2]])
 
 
 def main():
