@@ -69,7 +69,7 @@ def python_eval(code: str):
             code += "\nmain()"
         # with contextlib.redirect_stdout(None):
             # my_exec(code, locs)
-        return run_with_timeout(code, 10)
+        return run_with_timeout(code, 5)
         # return locs["answer"]
     except Exception as e:
         print("Exception:", e)

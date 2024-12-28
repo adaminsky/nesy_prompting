@@ -1,5 +1,3 @@
--e .
-
 pytest
 torch
 torchvision
@@ -8,8 +6,10 @@ matplotlib
 transformers
 pre-commit
 wheel
-flash-attn
-vllm
 accelerate
 pddlpy
 wonderwords
+datasets
+flash-attn
+vllm==0.6.3.post1
+timeout-decorator
