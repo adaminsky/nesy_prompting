@@ -56,9 +56,10 @@ class Function:
         and then applies a symbolic function."""
 
         # extract the symbols from the raw input
-        code, _, _ = self.code_mapper(args, self.args, self.fn, self.model)
+        code, out, _ = self.code_mapper(args, self.args, self.fn, self.model)
         if print_log:
             logger.info("Code output: %s", code)
+            logger.info("Output: %s", out)
 
         # evaluate the code
         if simulate_code:

@@ -84,6 +84,7 @@ def eval_solution_files(problem_file: str, domain_file: str, solution: str):
         dp = pddlpy.DomainProblem(domain_file, problem_file)
         is_valid = validate_plan(solution, dp)
     except Exception as e:
+        print("Eval pddl error:", e)
         return False
 
     return is_valid
@@ -173,12 +174,15 @@ def find_solution(problem: str, domain: str):
         dp = pddlpy.DomainProblem(domain_file, problem_file)
         plan = plan_search(dp)
     except Exception as e:
-        print(e)
+        print("Exception:", e)
         os.remove(domain_file)
         os.remove(problem_file)
         return None
 
     os.remove(domain_file)
     os.remove(problem_file)
+
+    if plan:
+        plan = "\n".join(plan)
 
     return plan

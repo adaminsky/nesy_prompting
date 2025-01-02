@@ -6,8 +6,12 @@ import os
 from PIL import Image
 import numpy as np
 import re
+from wonderwords import RandomWord
+import random
 from datasets import load_dataset
 from typing import Optional, Callable
+import torch
+from src.program_gen import demonstrate_generator
 import random
 logger = logging.getLogger(__name__)
 
@@ -406,20 +410,32 @@ class BBHDataset(torch.utils.data.Dataset):
         return len(self.data)
 
 class LongSortDataset(torch.utils.data.Dataset):
-    def __init__(self):
-        # generate lists of random integers between 0 and 9 of length 2-20
-        np.random.seed(0)
-        self.data = []
-        for _ in range(400):
-            length = np.random.randint(2, 21)
-            self.data.append({"input": np.random.randint(0, 10, length).tolist()})
-        # add the sorted version of the list as the target
-        for d in self.data:
-            d["target"] = sorted(d["input"])
+    def __init__(self, dir="./"):
+        if not os.path.exists(f"{dir}/data/long_sort.json"):
+            # generate lists of random words of length 5-50
+            np.random.seed(0)
+            random.seed(0)
+            torch.manual_seed(0)
+            lengths = np.random.randint(5, 51, size=400)
+            r = RandomWord()
+
+            self.data = []
+            for i in range(400):
+                self.data.append({"input": r.random_words(amount=lengths[i])})
+            for d in self.data:
+                d["target"] = sorted(d["input"])
+
+            # save to json
+            with open(f"{dir}/data/long_sort.json", "w") as f:
+                json.dump(self.data, f)
+        else:
+            with open(f"{dir}/data/long_sort.json", "r") as f:
+                self.data = json.load(f)
+
 
     def __getitem__(self, index):
-        template = "Sort the numbers from least to greatest defined by the following digits: {}"
-        return (None, template.format("".join(map(str, self.data[index]["input"])))), self.data[index]["target"]
+        template = "Sort the following words in alphabetical order: {}"
+        return (None, template.format(", ".join(map(str, self.data[index]["input"])))), self.data[index]["target"]
 
     def __len__(self):
         return len(self.data)
@@ -731,12 +747,313 @@ class ZebraPuzzleDataset(torch.utils.data.Dataset):
             sample = self.transform(sample)
 
         return sample
+    
+    
+class MultiplicationDataset(torch.utils.data.Dataset):
+    def __init__(self, num_digit=4, max_sequence=3000, generate_on_the_fly=True, transform=None):
+        """
+        Initializes the dataset by generating all data during initialization.
+
+        Args:
+            num_digit (int): Maximum number of digits for the numbers.
+            max_sequence (int): Maximum number of inputs per combination.
+            generate_on_the_fly (bool): Ignored (data is always generated in __init__).
+            transform (callable, optional): Optional transform to be applied to the data.
+        """
+        self.num_digit = num_digit
+        self.max_sequence = max_sequence
+        self.transform = transform
+
+        self.data = self._generate_dataset()
+
+    def _generate_dataset(self):
+        """
+        Generate the entire dataset during initialization.
+
+        Returns:
+            list: A list of generated samples.
+        """
+        data = []
+        for _ in range(self.max_sequence):
+            a = random.randint(10**(self.num_digit - 1), 10**self.num_digit - 1)
+            b = random.randint(10**(self.num_digit - 1), 10**self.num_digit - 1)
+            question = f"What is {a} times {b}?"
+            answer = str(a * b)
+            metadata = None
+            data.append([[None, question], answer, metadata])
+        return data
+
+    def __len__(self):
+        """
+        Returns the total number of samples in the dataset.
+        """
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        """
+        Retrieve a sample by its index.
+
+        Args:
+            idx (int): Index of the sample to retrieve.
+
+        Returns:
+            sample (list): A list containing the following elements:
+                - [None, question]: Image placeholder (None) and the multiplication question.
+                - answer: The multiplication result.
+                - metadata: Metadata (optional, can be extended).
+        """
+        sample = self.data[idx]
+
+        if self.transform:
+            sample = self.transform(sample)
+
+        return sample
+
+class SubsequenceSumDataset(torch.utils.data.Dataset):
+    def __init__(self, num_numbers=5, min_value=-5, max_value=5, num_samples=1000, generate_scratchpad=False, transform=None):
+        """
+        Initializes the dataset by generating all data during initialization.
+
+        Args:
+            num_numbers (int): Number of integers in each input sequence.
+            min_value (int): Minimum value of integers in the sequence.
+            max_value (int): Maximum value of integers in the sequence.
+            num_samples (int): Number of samples to generate.
+            generate_scratchpad (bool): Whether to include scratchpad explanations in the data.
+            transform (callable, optional): Optional transform to be applied to the data.
+        """
+        self.num_numbers = num_numbers
+        self.min_value = min_value
+        self.max_value = max_value
+        self.num_samples = num_samples
+        self.generate_scratchpad = generate_scratchpad
+        self.transform = transform
+
+        self.data = self._generate_dataset()
+        
+    def find_max_sum_nonadjacent(self, arr):
+        """
+        When there are many results, choose the one that appears first lexicographically,
+        where 1=picking the number and 2=not picking it.
+
+        dp[i][0] = maximum subsequence of arr[i:] where we do not use arr[i]
+        dp[i][1] = maximum subsequence of arr[i:] where we do use arr[i]
+
+        dp[i][0] = max(dp[i+1][0], dp[i+1][1])
+        dp[i][1] = arr[i] + dp[i+1][0]
+        """
+        N = len(arr)
+
+        dp = [[0 for _ in range(2)] for _ in range(N)]
+        dp[N-1][0] = 0
+        dp[N-1][1] = arr[N-1]
+        for i in range(N-2, -1, -1):
+            dp[i][1] = dp[i + 1][0] + arr[i]
+            dp[i][0] = max(dp[i + 1][0], dp[i + 1][1])
+
+        max_sum = max(dp[0][0], dp[0][1])
+
+        result = []
+        remaining_sum = max_sum
+        can_access_next_item = True
+        for i in range(N):
+            if dp[i][1] == remaining_sum and can_access_next_item:
+                result.append(1)
+                remaining_sum -= arr[i]
+                can_access_next_item = False
+            elif dp[i][0] == remaining_sum:
+                result.append(2)
+                can_access_next_item = True
+            else:
+                assert False
+
+        return result, max_sum
+
+    def _sample_entries(self, num_numbers, min_value, max_value, num_samples):
+        result = set()
+        while len(result) < num_samples:
+            input_list = [random.randint(min_value, max_value) for _ in range(num_numbers)]
+
+            output_sequence, my_max_sum = self.find_max_sum_nonadjacent(input_list)
+
+            result.add((tuple(input_list), tuple(output_sequence)))
+
+        result = [(list(input_list), list(output_seq)) for input_list, output_seq in result]
+        return result
+
+    def _all_entries(self, num_numbers, min_value, max_value):
+        all_inputs = itertools.product(list(range(min_value, max_value + 1)), repeat=num_numbers)
+
+        result = []
+        for input_list in all_inputs:
+            input_list = list(input_list)
+            output_sequence, my_max_sum = self.find_max_sum_nonadjacent(input_list)
+
+            result.append((input_list, output_sequence))
+
+        return result
+
+    def _generate_dataset(self):
+        """
+        Generate the entire dataset during initialization.
+
+        Returns:
+            list: A list of generated samples.
+        """
+        total_combinations = (self.max_value - self.min_value + 1) ** self.num_numbers
+
+        if total_combinations > self.num_samples:
+            entries = self._sample_entries(self.num_numbers, self.min_value, self.max_value, self.num_samples)
+        else:
+            entries = self._all_entries(self.num_numbers, self.min_value, self.max_value)
+
+        data = []
+        for input_list, output_list in entries:
+            if self.generate_scratchpad:
+                raise NotImplementedError()
+            else:
+                prompt = f"input = {input_list}\n\n###\n\n"
+                completion = ' ' + f"output = {output_list}" + ' ###'
+
+            data.append([[None, prompt], completion, None])
+        return data
+
+    def __len__(self):
+        """
+        Returns the total number of samples in the dataset.
+        """
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        """
+        Retrieve a sample by its index.
+
+        Args:
+            idx (int): Index of the sample to retrieve.
+
+        Returns:
+            sample (list): A list containing the following elements:
+                - [None, prompt]: Image placeholder (None) and the task prompt.
+                - completion: The task completion (with or without scratchpad).
+                - metadata: Metadata (currently None but can be extended).
+        """
+        sample = self.data[idx]
+
+        if self.transform:
+            sample = self.transform(sample)
+
+        return sample
+
+
+class ZebraPuzzleDataset(torch.utils.data.Dataset):
+    def __init__(self, mode='test_id_xl', data_dir='./data/einstein_puzzles', transform=None):
+        """
+        Initializes the dataset by loading puzzles from the specified mode.
+
+        Args:
+            mode (str): The mode of the dataset (e.g., 'train', 'dev', 'test').
+            data_dir (str): Path to the directory containing the puzzle data.
+            transform (callable, optional): Optional transform to be applied to the data.
+        """
+        self.mode = mode
+        self.data_dir = data_dir
+        self.transform = transform
+
+        # Load puzzles
+        with open(f"{self.data_dir}/logic_grid_puzzles.{self.mode}.json", "r") as f:
+            self.dataset = json.load(f)
+
+    def __len__(self):
+        """
+        Returns the total number of samples in the dataset.
+        """
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        """
+        Retrieve a sample by its index.
+
+        Args:
+            idx (int): Index of the sample to retrieve.
+
+        Returns:
+            sample (list): A list containing the following elements:
+                - [None, question]: Image placeholder (None) and the puzzle question context without revealing the answer.
+                - answer: The correct answer to the question.
+                - metadata: Additional metadata including question data.
+        """
+        item = self.dataset[idx]
+
+        # Extract fields
+        table_data = item['solution']['table_rows']
+        col_names = item['solution']['table_header']
+        questions = item['questions']
+
+        # Select a random question
+        question_data = random.choice(questions)
+        raw_question = question_data['question']
+        choices = question_data['choices']
+        truth_idx = question_data['truth_idx']
+        answer = choices[truth_idx]
+
+        # Modify the question to exclude the answer
+        question_parts = raw_question.split("?")
+        question = question_parts[0] + "?"  # Remove any specifics beyond the question mark
+
+        # Metadata
+        metadata = {
+            "choices": choices,
+            "truth_idx": truth_idx,
+            "table_data": table_data,
+            "col_names": col_names
+        }
+
+        sample = [
+            [None, question],  # No image; puzzle question without answer
+            answer,             # Correct answer
+            metadata            # Additional metadata
+        ]
+
+        if self.transform:
+            sample = self.transform(sample)
+
+        return sample
+
+
+class ListSynthesisDataset(torch.utils.data.Dataset):
+    def __init__(self):
+        self.data = demonstrate_generator()
+
+    def __getitem__(self, index):
+        return (None, self.data[index][0]), self.data[index][1]
+
+    def __len__(self):
+        return len(self.data)
+
+    def check_correct(self, index, fn):
+        return all([fn(*ex) == out for ex, out in self.data[index][2]])
+
+
+class ListSynthesisDataset(torch.utils.data.Dataset):
+    def __init__(self):
+        self.data = demonstrate_generator()
+
+    def __getitem__(self, index):
+        return (None, self.data[index][0]), self.data[index][1]
+
+    def __len__(self):
+        return len(self.data)
+
+    def check_correct(self, index, fn):
+        return all([fn(*ex) == out for ex, out in self.data[index][2]])
 
 
 def main():
-    d = ZebraPuzzleDataset()
-    a=d[0]
-    b=0
+    # d = FOLIODataset()
+    # d[0]
+    d = LongSortDataset()
+    print(d[101])
+
 
 if __name__ == "__main__":
     main()

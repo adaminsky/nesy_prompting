@@ -131,7 +131,7 @@ def code_mapper(
         prompt_content.append({"type": "text", "text": f"\nTo derive the final answer, write a Python function to {fn_desc}."})
     else:
         prompt_content.append(
-            {"type": "text", "text": f"\nTo derive the final answer, call the following function:\n{inspect.getsource(fn_desc)}Include the above function in the code block."},
+            {"type": "text", "text": f"\nTo derive the final answer, call the following function:\n{inspect.getsource(fn_desc)}Include the above function in the code block and assume that any provided methods are already implemented."},
         )
 
     prompt_content.append(
@@ -167,6 +167,7 @@ def code_mapper(
 
     prompt = [{"role": "user", "content": prompt_content}]
     sampling_params = SamplingParams(temperature=0.0, max_tokens=5000, top_p=1.0)
+    print(prompt)
     output = (
         model.chat(prompt, sampling_params=sampling_params, use_tqdm=False)[0]
         .outputs[0]
