@@ -41,3 +41,15 @@ Download my version of the code and then follow the instructions in the README.
 #### Mystery Blocksworld
 
 Download from [here](https://raw.githubusercontent.com/karthikv792/LLMs-Planning/refs/heads/main/plan-bench/prompts/mystery_blocksworld/task_1_plan_generation.json).
+
+## Running in Docker
+
+First build the docker container with:
+```sh
+docker build -t llmnesy .
+```
+
+Then, the experiments can be run in the docker container with the following:
+```sh
+docker run -it -v ~/.cache/huggingface:/huggingface -e CUDA_VISIBLE_DEVICES=0 llmnesy python scripts/eval_all_nesy.py --dataset blocksworld --multi_prompt --use_hf --log
+```

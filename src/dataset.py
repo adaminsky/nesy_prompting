@@ -14,6 +14,9 @@ import pddlpy
 import tempfile
 from src.program_gen import demonstrate_generator
 import random
+import itertools
+from sudoku import Sudoku
+import re
 logger = logging.getLogger(__name__)
 
 
@@ -659,6 +662,7 @@ class MultiplicationDataset(torch.utils.data.Dataset):
 
         return sample
 
+
 class SubsequenceSumDataset(torch.utils.data.Dataset):
     def __init__(self, num_numbers=5, min_value=-5, max_value=5, num_samples=1000, generate_scratchpad=False, transform=None):
         """
@@ -1169,15 +1173,93 @@ class ListSynthesisDataset(torch.utils.data.Dataset):
         return all([fn(*ex) == out for ex, out in self.data[index][2]])
 
 
+class SudokuDataset(torch.utils.data.Dataset):
+    def __init__(self, min_clues=60, max_clues=80, num_samples=200):
+        if os.path.exists(f"data/sudoku/data_{min_clues}_{max_clues}.json"):
+            with open(f"data/sudoku/data_{min_clues}_{max_clues}.json", "r") as f:
+                self.data = json.load(f)["data"]
+        else:
+            self.data = []
+            clues = np.random.randint(min_clues, max_clues, num_samples)
+            for clue in clues:
+                puzzle = Sudoku(3).difficulty((81 - clue) / 81)
+                query = str(puzzle)
+                query = re.sub(r"\n---------------------------\n9x9 \(3x3\) SUDOKU PUZZLE\nDifficulty: 0\.\d\d\n---------------------------\n", "", query).strip()
+                solution = str(puzzle.solve()).replace("\n---------------------------\n9x9 (3x3) SUDOKU PUZZLE\nDifficulty: SOLVED\n---------------------------\n", "").strip()
+                self.data.append({"board": query, "solution": solution, "clues": str(clue)})
+            with open(f"data/sudoku/data_{min_clues}_{max_clues}.json", "w") as f:
+                json.dump({"data": self.data}, f, indent=4)
+    
+    def __getitem__(self, index):
+        prompt = "Solve the following Sudoku puzzle:\n"
+        return (None, prompt + self.data[index]["board"]), self.data[index]["solution"]
+
+    def __len__(self):
+        return len(self.data)
+
+
+# TODO: This dataset is currently unsupported because it requires GPT-4 to
+# evaluate the generated plans. We can either implement this or find a
+# workaround.
+class TravelPlannerDataset(torch.utils.data.Dataset):
+    def __init__(self):
+        self.data = load_dataset("osunlp/TravelPlanner", "validation")
+        self.prompt = """You are a proficient planner. Based on the provided information and query, please give me a detailed plan, including specifics such as flight numbers (e.g., F0123456), restaurant names, and accommodation names. Note that all the information in your plan should be derived from the provided data. You must adhere to the format given in the example. Additionally, all details should align with commonsense. The symbol '-' indicates that information is unnecessary. For example, in the provided sample, you do not need to plan after returning to the departure city. When you travel to two cities in one day, you should note it in the 'Current City' section as in the example (i.e., from A to B).
+
+***** Example *****
+Query: Could you create a travel plan for 7 people from Ithaca to Charlotte spanning 3 days, from March 8th to March 14th, 2022, with a budget of $30,200?
+Travel Plan:
+Day 1:
+Current City: from Ithaca to Charlotte
+Transportation: Flight Number: F3633413, from Ithaca to Charlotte, Departure Time: 05:38, Arrival Time: 07:46
+Breakfast: Nagaland's Kitchen, Charlotte
+Attraction: The Charlotte Museum of History, Charlotte
+Lunch: Cafe Maple Street, Charlotte
+Dinner: Bombay Vada Pav, Charlotte
+Accommodation: Affordable Spacious Refurbished Room in Bushwick!, Charlotte
+
+Day 2:
+Current City: Charlotte
+Transportation: -
+Breakfast: Olive Tree Cafe, Charlotte
+Attraction: The Mint Museum, Charlotte;Romare Bearden Park, Charlotte.
+Lunch: Birbal Ji Dhaba, Charlotte
+Dinner: Pind Balluchi, Charlotte
+Accommodation: Affordable Spacious Refurbished Room in Bushwick!, Charlotte
+
+Day 3:
+Current City: from Charlotte to Ithaca
+Transportation: Flight Number: F3786167, from Charlotte to Ithaca, Departure Time: 21:42, Arrival Time: 23:26
+Breakfast: Subway, Charlotte
+Attraction: Books Monument, Charlotte.
+Lunch: Olive Tree Cafe, Charlotte
+Dinner: Kylin Skybar, Charlotte
+Accommodation: -
+
+***** Example Ends *****
+
+Given information: {text}
+Query: {query}
+Travel Plan:"""
+
+    def __getitem__(self, index):
+        query = self.data[index]["query"]
+        info = self.data[index]["reference_information"]
+        return (None, self.prompt.format(text=info, query=query)), (self.data[index]["level"], self.data[index]["local_constraint"])
+
+    def __len__(self):
+        return len(self.data)
+
+
 def main():
     # d = FOLIODataset()
     # d[0]
     # d = LongSortDataset()
-    d = BlocksWorldDataset()
-    for i in range(len(d)):
-        if d[i][1] == "20":
-            print(d[i][0][1])
-            break
+    # d = BlocksWorldDataset()
+    d = SudokuDataset()
+    print(d[10][0][1])
+    print()
+    print(d[10][1])
 
 
 if __name__ == "__main__":
