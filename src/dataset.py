@@ -5,12 +5,13 @@ import json
 import os
 from PIL import Image
 import numpy as np
-import re
 from wonderwords import RandomWord
 import random
 from datasets import load_dataset
 from typing import Optional, Callable
-import torch
+import subprocess
+import pddlpy
+import tempfile
 from src.program_gen import demonstrate_generator
 
 logger = logging.getLogger(__name__)
@@ -272,13 +273,27 @@ class ClevrDataset(torch.utils.data.Dataset):
                     i.pop("pixel_coords")
 
         # remove yes/no questions
-        keep_idx = [True if ans != "yes" and ans != "no" else False for ans in self.all_answers]
-        self.all_questions = [self.all_questions[i] for i in range(len(self.all_questions)) if keep_idx[i]]
-        self.all_image_idxs = [self.all_image_idxs[i] for i in range(len(self.all_image_idxs)) if keep_idx[i]]
-        self.all_programs = [self.all_programs[i] for i in range(len(self.all_programs)) if keep_idx[i]]
-        self.all_answers = [self.all_answers[i] for i in range(len(self.all_answers)) if keep_idx[i]]
+        keep_idx = [
+            True if ans != "yes" and ans != "no" else False for ans in self.all_answers
+        ]
+        self.all_questions = [
+            self.all_questions[i] for i in range(len(self.all_questions)) if keep_idx[i]
+        ]
+        self.all_image_idxs = [
+            self.all_image_idxs[i]
+            for i in range(len(self.all_image_idxs))
+            if keep_idx[i]
+        ]
+        self.all_programs = [
+            self.all_programs[i] for i in range(len(self.all_programs)) if keep_idx[i]
+        ]
+        self.all_answers = [
+            self.all_answers[i] for i in range(len(self.all_answers)) if keep_idx[i]
+        ]
         if self.all_scenes is not None:
-            self.all_scenes = [self.all_scenes[i] for i in range(len(self.all_scenes)) if keep_idx[i]]
+            self.all_scenes = [
+                self.all_scenes[i] for i in range(len(self.all_scenes)) if keep_idx[i]
+            ]
 
     def __getitem__(self, index):
         question = self.all_questions[index]
@@ -352,8 +367,107 @@ class ChartQADataset(torch.utils.data.Dataset):
 
 
 class BlocksWorldDataset(torch.utils.data.Dataset):
-    def __init__(self, root="./data/mystery_blocksworld/"):
-        self.data_json = json.load(open(os.path.join(root, "task_1_plan_generation.json"), "r"))["instances"]
+    def __init__(
+        self, root="./data/mystery_blocksworld/", min_objects=3, max_objects=10
+    ):
+        # self.data_json = json.load(open(os.path.join(root, "task_1_plan_generation.json"), "r"))["instances"]
+        self.fast_downward = "../downward/fast-downward.py"
+        self.solver_cmd = f'timeout 60s {self.fast_downward} {{domain}} {{problem}} --search "astar(lmcut())" > /dev/null'
+
+        if not os.path.exists(
+            os.path.join(root, f"mysteryblocks_{min_objects}_{max_objects}.json")
+        ):
+            np.random.seed(0)
+            num_objects = np.random.randint(min_objects, 1 + max_objects, size=400)
+            self.data = []
+            cnt = 0
+            while cnt < 400:
+                res = subprocess.run(
+                    [
+                        "bash",
+                        "data/mystery_blocksworld/generate/blocksworld",
+                        "4",
+                        str(num_objects[cnt]),
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                res = res.stdout.strip()
+                res = (
+                    res.replace("handempty", "harm-ny")
+                    .replace("ontable", "planet")
+                    .replace("clear", "province")
+                    .replace("on", "craves")
+                    .replace("harm-ny", "harmony")
+                )
+                initial = []
+                goal = []
+                with tempfile.NamedTemporaryFile(
+                    mode="w", delete=False, encoding="ascii"
+                ) as f:
+                    f.write(res)
+                    problem_file = f.name
+                    f.seek(0)
+
+                    # check if the problem is solvable
+                    subprocess.run(
+                        self.solver_cmd.format(
+                            domain="data/mystery_blocksworld/generate/domain.pddl",
+                            problem=problem_file,
+                        ),
+                        shell=True,
+                    )
+                    try:
+                        with open("sas_plan", "r") as f:
+                            plan = "\n".join([l.strip() for l in f.readlines()][:-1])
+                        os.remove("sas_plan")
+                    except:
+                        # unsolvable problem
+                        continue
+
+                    dp = pddlpy.DomainProblem(
+                        "data/mystery_blocksworld/generate/domain.pddl", problem_file
+                    )
+                    initial = dp.initialstate()
+                    goal = dp.goals()
+                query = "As initial conditions I have that"
+                goal = [
+                    f"object {g.predicate[1]} {g.predicate[0]} object {g.predicate[2]}"
+                    for g in goal
+                ]
+                for cond in initial:
+                    if len(cond.predicate) == 3:
+                        query += f", object {cond.predicate[1]} {cond.predicate[0]} object {cond.predicate[2]}"
+                    elif len(cond.predicate) == 2:
+                        query += f", {cond.predicate[0]} object {cond.predicate[1]}"
+                    else:
+                        query += f", {cond.predicate[0]}"
+                query += f". My goal is to have that {', '.join(goal)}."
+                self.data.append(
+                    {
+                        "query": query,
+                        "num_objects": str(num_objects[cnt]),
+                        "ground_truth_plan": plan,
+                        "pddl_problem": res,
+                    }
+                )
+
+                cnt += 1
+                if cnt < 400:
+                    print("Finding solvable problem of size", num_objects[cnt])
+
+            with open(
+                os.path.join(root, f"mysteryblocks_{min_objects}_{max_objects}.json"),
+                "w",
+            ) as f:
+                # write formatted json
+                json.dump({"data": self.data}, f, indent=4)
+        else:
+            with open(
+                os.path.join(root, f"mysteryblocks_{min_objects}_{max_objects}.json"),
+                "r",
+            ) as f:
+                self.data = json.load(f)
 
     def __getitem__(self, index):
         instruction = """Here are the actions I can do:
@@ -376,27 +490,32 @@ I have the following restrictions on my actions:
 - Once feast action is performed the following will be true: pain object, province other object.
 - Once feast action is performed the following will be false:, object craves other object, province object, harmony."""
 
-#         example = """As initial conditions I have that, object b craves object a, object c craves object d, object d craves object b, harmony, planet object a and province object c.
-# My goal is to have that object b craves object c and object c craves object d.
-# My plan is as follows:
-# (feast c d)
-# (succumb c)
-# (feast d b)
-# (succumb d)
-# (attack c)
-# (overcome c d)
-# (feast b a)
-# (overcome b c)"""
+        #         example = """As initial conditions I have that, object b craves object a, object c craves object d, object d craves object b, harmony, planet object a and province object c.
+        # My goal is to have that object b craves object c and object c craves object d.
+        # My plan is as follows:
+        # (feast c d)
+        # (succumb c)
+        # (feast d b)
+        # (succumb d)
+        # (attack c)
+        # (overcome c d)
+        # (feast b a)
+        # (overcome b c)"""
 
-        raw_prompt = self.data_json[index]["query"]
-        query = re.findall(r"\[STATEMENT\](.*?)My plan is as follows:\n\n\[PLAN\]", raw_prompt, re.DOTALL)[-1].strip()
+        # raw_prompt = self.data_json[index]["query"]
+        # query = re.findall(r"\[STATEMENT\](.*?)My plan is as follows:\n\n\[PLAN\]", raw_prompt, re.DOTALL)[-1].strip()
+        query = self.data[index]["query"]
 
         prompt = f"{instruction}\n\nQuery: {query}"
 
-        return (None, prompt), self.data_json[index]["ground_truth_plan"]
+        return (
+            (None, prompt),
+            (self.data[index]["num_objects"]),
+            "None",
+        )  # self.data_json[index]["ground_truth_plan"]
 
     def __len__(self):
-        return len(self.data_json)
+        return len(self.data)
 
 
 class BBHDataset(torch.utils.data.Dataset):
@@ -409,14 +528,15 @@ class BBHDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.data)
 
+
 class LongSortDataset(torch.utils.data.Dataset):
-    def __init__(self, dir="./"):
+    def __init__(self, dir="./", min_length=5, max_length=50):
         if not os.path.exists(f"{dir}/data/long_sort.json"):
-            # generate lists of random words of length 5-50
+            # generate lists of random words of given lengths
             np.random.seed(0)
             random.seed(0)
             torch.manual_seed(0)
-            lengths = np.random.randint(5, 51, size=400)
+            lengths = np.random.randint(min_length, 1 + max_length, size=400)
             r = RandomWord()
 
             self.data = []
@@ -432,16 +552,19 @@ class LongSortDataset(torch.utils.data.Dataset):
             with open(f"{dir}/data/long_sort.json", "r") as f:
                 self.data = json.load(f)
 
-
     def __getitem__(self, index):
         template = "Sort the following words in alphabetical order: {}"
-        return (None, template.format(", ".join(map(str, self.data[index]["input"])))), self.data[index]["target"]
+        return (
+            None,
+            template.format(", ".join(map(str, self.data[index]["input"]))),
+        ), self.data[index]["target"]
 
     def __len__(self):
         return len(self.data)
-    
+
+
 class FOLIODataset(torch.utils.data.Dataset):
-    def __init__(self, split='train', transform=None):
+    def __init__(self, split="train", transform=None):
         # Load the specified split of the dataset
         self.dataset = load_dataset("yale-nlp/FOLIO", split=split)
         self.transform = transform
@@ -466,21 +589,19 @@ class FOLIODataset(torch.utils.data.Dataset):
         # }
         image = None
         question = f"Premise: {item['premises']} Conclusion: {item['conclusion']}  Is the conclusion True, False, or Uncertain? Choose one."
-        answer = item['label']
-        metadata = f"Premise: {item['premises-FOL']} Conclusion: {item['conclusion-FOL']}"
+        answer = item["label"]
+        metadata = (
+            f"Premise: {item['premises-FOL']} Conclusion: {item['conclusion-FOL']}"
+        )
 
-        sample = [
-            [image, question],
-            answer,
-            metadata
-        ]
+        sample = [[image, question], answer, metadata]
 
         return sample
 
 
 class ListSynthesisDataset(torch.utils.data.Dataset):
-    def __init__(self):
-        self.data = demonstrate_generator()
+    def __init__(self, min_width=1, max_width=5, min_depth=1, max_depth=5):
+        self.data = demonstrate_generator(min_width, max_width, min_depth, max_depth)
 
     def __getitem__(self, index):
         return (None, self.data[index][0]), self.data[index][1]
@@ -495,8 +616,12 @@ class ListSynthesisDataset(torch.utils.data.Dataset):
 def main():
     # d = FOLIODataset()
     # d[0]
-    d = LongSortDataset()
-    print(d[101])
+    # d = LongSortDataset()
+    d = BlocksWorldDataset()
+    for i in range(len(d)):
+        if d[i][1] == "20":
+            print(d[i][0][1])
+            break
 
 
 if __name__ == "__main__":
