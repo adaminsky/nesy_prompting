@@ -15,6 +15,7 @@ import tempfile
 from src.program_gen import demonstrate_generator
 import random
 import itertools
+import copy
 from sudoku import Sudoku
 import re
 logger = logging.getLogger(__name__)
@@ -470,7 +471,7 @@ class BlocksWorldDataset(torch.utils.data.Dataset):
                 os.path.join(root, f"mysteryblocks_{min_objects}_{max_objects}.json"),
                 "r",
             ) as f:
-                self.data = json.load(f)
+                self.data = json.load(f)["data"]
 
     def __getitem__(self, index):
         instruction = """Here are the actions I can do:
@@ -509,12 +510,13 @@ I have the following restrictions on my actions:
         # query = re.findall(r"\[STATEMENT\](.*?)My plan is as follows:\n\n\[PLAN\]", raw_prompt, re.DOTALL)[-1].strip()
         query = self.data[index]["query"]
 
-        prompt = f"{instruction}\n\nQuery: {query}"
+        prompt = f"{instruction}\n\nQuery: {query}. Find a sequence of actions to achieve this goal."
 
         return (
             (None, prompt),
             (self.data[index]["num_objects"]),
-            "None",
+            self.data[index]["ground_truth_plan"],
+            self.data[index]["num_objects"],
         )  # self.data_json[index]["ground_truth_plan"]
 
     def __len__(self):
@@ -1173,8 +1175,37 @@ class ListSynthesisDataset(torch.utils.data.Dataset):
         return all([fn(*ex) == out for ex, out in self.data[index][2]])
 
 
+def difficulty(sudoku, difficulty):
+    """
+    Sets the difficulty of the Sudoku board by removing cells.
+
+    This method modifies the current Sudoku instance by removing cells from the solved puzzle to achieve the desired difficulty level. The difficulty is specified as a float value between 0 and 1, where 0 represents the easiest puzzle (fully solved) and 1 represents the most difficult puzzle (almost empty).
+
+    :param difficulty: A float value between 0 and 1 representing the desired difficulty level of the Sudoku puzzle.
+    :return: A new Sudoku instance representing the puzzle with adjusted difficulty.
+    :raises AssertionError: If the provided difficulty value is not within the range of 0 to 1.
+    """
+    assert 0 < difficulty < 1, 'Difficulty must be between 0 and 1'
+    indices = list(range(sudoku.size * sudoku.size))
+    random.shuffle(indices)
+    problem_board = sudoku.solve().board
+    removed = 0
+    for index in indices[:int(difficulty * sudoku.size * sudoku.size)]:
+        row_index = index // sudoku.size
+        col_index = index % sudoku.size
+        saved_board = copy.deepcopy(problem_board)
+        problem_board[row_index][col_index] = Sudoku._empty_cell_value
+        if not Sudoku(sudoku.width, sudoku.height, problem_board).has_multiple_solutions():
+            removed += 1
+        else:
+            problem_board = saved_board
+        if removed >= difficulty * sudoku.size * sudoku.size:
+            break
+    return Sudoku(sudoku.width, sudoku.height, problem_board, difficulty)
+
+
 class SudokuDataset(torch.utils.data.Dataset):
-    def __init__(self, min_clues=60, max_clues=80, num_samples=200):
+    def __init__(self, min_clues=40, max_clues=70, num_samples=200):
         if os.path.exists(f"data/sudoku/data_{min_clues}_{max_clues}.json"):
             with open(f"data/sudoku/data_{min_clues}_{max_clues}.json", "r") as f:
                 self.data = json.load(f)["data"]
@@ -1182,7 +1213,7 @@ class SudokuDataset(torch.utils.data.Dataset):
             self.data = []
             clues = np.random.randint(min_clues, max_clues, num_samples)
             for clue in clues:
-                puzzle = Sudoku(3).difficulty((81 - clue) / 81)
+                puzzle = difficulty(Sudoku(3), (81 - clue) / 81)
                 query = str(puzzle)
                 query = re.sub(r"\n---------------------------\n9x9 \(3x3\) SUDOKU PUZZLE\nDifficulty: 0\.\d\d\n---------------------------\n", "", query).strip()
                 solution = str(puzzle.solve()).replace("\n---------------------------\n9x9 (3x3) SUDOKU PUZZLE\nDifficulty: SOLVED\n---------------------------\n", "").strip()
@@ -1197,6 +1228,40 @@ class SudokuDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.data)
 
+
+class ClutrrDataset(torch.utils.data.Dataset):
+    def __init__(self):
+        # load jsonlines
+        self.data = []
+        with open("data/CLUTRR/train.jsonl", "r") as f:
+            for line in f:
+                self.data.append(json.loads(line))
+
+        # subsample to 300
+        self.data = [d for d in self.data if len(d["descriptor"].split(",")) >= 8]
+        print("Number of samples:", len(self.data))
+        random.seed(0)
+        self.data = random.sample(self.data, 300)
+        
+        num_people = [len(d["name_map"]) for d in self.data]
+        path_len = [len(d["descriptor"].split(",")) for d in self.data]
+        # print histogram as text
+        print("Number of people histogram:")
+        print(np.histogram(num_people))
+        print("Path length histogram:")
+        print(np.histogram(path_len))
+
+    
+    def __getitem__(self, index):
+        story = self.data[index]["text_story"]
+        query = self.data[index]["query"]
+        name_map = self.data[index]["name_map"]
+        query = f"How is {name_map[str(query[1])]} related to {name_map[str(query[0])]}?"
+        return (None, story + query), self.data[index]["target_gender"], len(name_map), len(self.data[index]["descriptor"].split(","))
+
+    def __len__(self):
+        return len(self.data)
+    
 
 # TODO: This dataset is currently unsupported because it requires GPT-4 to
 # evaluate the generated plans. We can either implement this or find a
@@ -1256,7 +1321,8 @@ def main():
     # d[0]
     # d = LongSortDataset()
     # d = BlocksWorldDataset()
-    d = SudokuDataset()
+    # d = SudokuDataset()
+    d = ClutrrDataset()
     print(d[10][0][1])
     print()
     print(d[10][1])
