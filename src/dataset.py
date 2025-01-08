@@ -1257,7 +1257,7 @@ class TwentyFourGameDataset(torch.utils.data.Dataset):
     def __init__(
         self,
         n: int,
-        data_dir: str = "./data/",
+        data_dir: str = "./data/24game/",
         max_samples: Optional[int] = None,
         filename_pattern: str = "num({})_samples({}).jsonl",
         num_samples_per_file: int = 200,
@@ -1321,9 +1321,9 @@ class TwentyFourGameDataset(torch.utils.data.Dataset):
 
         numbers = self.samples[index]
         
-        query = f"""Play the 24 game with the following list of numbers: {numbers}.  Only use +, -, *, and /.  Every list index must be used. You can assume a solution always exists. Find a valid expression and return what that expression is."""
+        query = f"""Play the 24 game with the following list of numbers: {numbers}.  Only use +, -, *, and /.  Every list index must be used. You can assume a solution always exists. Find a valid expression using all of the numbers and return what that expression is."""
         
-        return ((None, query), self.target, [])
+        return ((None, query), self.target, numbers)
 
     
 
