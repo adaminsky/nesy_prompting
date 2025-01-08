@@ -1148,20 +1148,6 @@ class ZebraPuzzleDataset(torch.utils.data.Dataset):
 
 
 class ListSynthesisDataset(torch.utils.data.Dataset):
-    def __init__(self):
-        self.data = demonstrate_generator()
-
-    def __getitem__(self, index):
-        return (None, self.data[index][0]), self.data[index][1]
-
-    def __len__(self):
-        return len(self.data)
-
-    def check_correct(self, index, fn):
-        return all([fn(*ex) == out for ex, out in self.data[index][2]])
-
-
-class ListSynthesisDataset(torch.utils.data.Dataset):
     def __init__(self, min_width=1, max_width=5, min_depth=1, max_depth=5):
         self.data = demonstrate_generator(min_width, max_width, min_depth, max_depth)
 
@@ -1212,12 +1198,14 @@ class SudokuDataset(torch.utils.data.Dataset):
         else:
             self.data = []
             clues = np.random.randint(min_clues, max_clues, num_samples)
+            i = 0
             for clue in clues:
-                puzzle = difficulty(Sudoku(3), (81 - clue) / 81)
+                puzzle = difficulty(Sudoku(3, seed=i), (81 - clue) / 81)
                 query = str(puzzle)
                 query = re.sub(r"\n---------------------------\n9x9 \(3x3\) SUDOKU PUZZLE\nDifficulty: 0\.\d\d\n---------------------------\n", "", query).strip()
                 solution = str(puzzle.solve()).replace("\n---------------------------\n9x9 (3x3) SUDOKU PUZZLE\nDifficulty: SOLVED\n---------------------------\n", "").strip()
                 self.data.append({"board": query, "solution": solution, "clues": str(clue)})
+                i += 1
             with open(f"data/sudoku/data_{min_clues}_{max_clues}.json", "w") as f:
                 json.dump({"data": self.data}, f, indent=4)
     

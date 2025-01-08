@@ -1,6 +1,4 @@
 from vllm import LLM, SamplingParams
-import re
-import contextlib
 import timeout_decorator
 import multiprocessing
 
@@ -31,7 +29,7 @@ def my_exec(code, locs):
 def run_with_timeout(code, timeout):
     def target(queue):
         locs = {}  # Standard dictionary for local variables
-        locs['__name__'] = '__main__'
+        locs["__name__"] = "__main__"
         try:
             exec(code, locs, locs)  # Execute the code with locs as locals
             queue.put(locs.get("answer", None))  # Retrieve the value of "answer"
@@ -50,28 +48,36 @@ def run_with_timeout(code, timeout):
         return None
 
     # Retrieve result from the queue
+    errors = None
     if not queue.empty():
         result = queue.get()
         if isinstance(result, str) and result.startswith("Error:"):
-            print(result)  # Print error if there is one
+            # print(result)  # Print error if there is one
+            errors = result
         else:
-            return result  # Return the value of "answer"
-    return None
+            return result, None  # Return the value of "answer"
+    return None, errors
 
 
 def python_eval(code: str):
     try:
         if "if __name__ == '__main__'" in code:
-            code = code.replace("if __name__ == '__main__':\n    main()", "    return answer\nif __name__ == '__main__':\n    answer = main()")
-            code = code.replace("if __name__ == \"__main__\":\n    main()", "    return answer\nif __name__ == '__main__':\n    answer = main()")
+            code = code.replace(
+                "if __name__ == '__main__':\n    main()",
+                "    return answer\nif __name__ == '__main__':\n    answer = main()",
+            )
+            code = code.replace(
+                'if __name__ == "__main__":\n    main()',
+                "    return answer\nif __name__ == '__main__':\n    answer = main()",
+            )
             code = "answer = None\n" + code
         if "main():" in code:
             code += "\nmain()"
         # with contextlib.redirect_stdout(None):
-            # my_exec(code, locs)
+        # my_exec(code, locs)
+        # run the code with a timeout of 5 seconds and store any output or errors
         return run_with_timeout(code, 5)
         # return locs["answer"]
     except Exception as e:
         print("Exception:", e)
         return "None"
-
