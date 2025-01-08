@@ -510,7 +510,7 @@ I have the following restrictions on my actions:
         # query = re.findall(r"\[STATEMENT\](.*?)My plan is as follows:\n\n\[PLAN\]", raw_prompt, re.DOTALL)[-1].strip()
         query = self.data[index]["query"]
 
-        prompt = f"{instruction}\n\nQuery: {query}. Find a sequence of actions to achieve this goal."
+        prompt = f"{instruction}\n\nQuery: {query} Find a sequence of actions to achieve this goal."
 
         return (
             (None, prompt),
