@@ -1,3 +1,4 @@
+from typing import Optional, List, Tuple
 import torchvision
 import torch
 import logging
@@ -1249,6 +1250,81 @@ class ClutrrDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.data)
+    
+    
+
+class TwentyFourGameDataset(torch.utils.data.Dataset):
+    def __init__(
+        self,
+        n: int,
+        data_dir: str = "./data/",
+        max_samples: Optional[int] = None,
+        filename_pattern: str = "num({})_samples({}).jsonl",
+        num_samples_per_file: int = 200,
+    ):
+        """
+        Initializes the TwentyFourGameDataset.
+
+        Args:
+            data_dir (str): Directory where the JSONL files are stored.
+            n (int): Number of numbers in each sample (corresponds to 'num' in the filename).
+            max_samples (Optional[int], optional): Maximum number of samples to load. Defaults to None.
+            filename_pattern (str, optional): Pattern to format the filename. Defaults to "num({})_samples({}).jsonl".
+            num_samples_per_file (int, optional): Number of samples per file. Defaults to 200.
+        """
+        self.data_dir = data_dir
+        self.n = n
+        self.max_samples = max_samples
+        self.target = 24  # Fixed target for the 24 Game
+
+        # Construct the filename based on 'n' and 'num_samples_per_file'
+        filename = filename_pattern.format(n, num_samples_per_file)
+        file_path = os.path.join(data_dir, filename)
+
+        if not os.path.isfile(file_path):
+            raise FileNotFoundError(f"Data file not found: {file_path}")
+
+        # Load all samples into memory
+        self.samples = []
+        with open(file_path, 'r') as f:
+            for line in f:
+                data = json.loads(line.strip())
+                numbers = data.get("numbers", [])
+                if len(numbers) != self.n:
+                    raise ValueError(
+                        f"Sample index {data.get('sample_index')} has {len(numbers)} numbers, expected {self.n}."
+                    )
+                self.samples.append(numbers)
+
+        # Apply max_samples if specified
+        if self.max_samples is not None:
+            self.samples = self.samples[:self.max_samples]
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, index: int) -> Tuple[Tuple[Optional[torch.Tensor], List[int]], int, List]:
+        """
+        Retrieves the sample at the specified index.
+
+        Args:
+            index (int): Index of the sample to retrieve.
+
+        Returns:
+            Tuple containing:
+                - Tuple (image, numbers): image is None, numbers is the list of integers.
+                - target: Fixed integer 24.
+                - Additional info: Empty list.
+        """
+        if index < 0 or index >= len(self):
+            raise IndexError(f"Index {index} out of range for dataset of size {len(self)}.")
+
+        numbers = self.samples[index]
+        
+        query = f"""Play the 24 game with the following list of numbers: {numbers}.  Only use +, -, *, and /.  Every list index must be used. You can assume a solution always exists. Find a valid expression and return what that expression is."""
+        
+        return ((None, query), self.target, [])
+
     
 
 # TODO: This dataset is currently unsupported because it requires GPT-4 to
