@@ -515,9 +515,9 @@ I have the following restrictions on my actions:
 
         return (
             (None, prompt),
-            (self.data[index]["num_objects"]),
-            self.data[index]["ground_truth_plan"],
+            (self.data[index]["ground_truth_plan"],
             self.data[index]["num_objects"],
+            self.data[index]["num_objects"],)
         )  # self.data_json[index]["ground_truth_plan"]
 
     def __len__(self):
