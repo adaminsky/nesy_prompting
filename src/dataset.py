@@ -1211,8 +1211,8 @@ class SudokuDataset(torch.utils.data.Dataset):
                 json.dump({"data": self.data}, f, indent=4)
     
     def __getitem__(self, index):
-        prompt = "Solve the following Sudoku puzzle:\n"
-        return (None, prompt + self.data[index]["board"]), self.data[index]["solution"]
+        prompt = "Solve the following Sudoku puzzle:\n```\n"
+        return (None, prompt + self.data[index]["board"] + "\n```"), self.data[index]["solution"]
 
     def __len__(self):
         return len(self.data)

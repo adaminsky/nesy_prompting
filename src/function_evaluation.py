@@ -1,6 +1,8 @@
 from vllm import LLM, SamplingParams
 import timeout_decorator
 import multiprocessing
+from io import StringIO
+from contextlib import redirect_stdout
 
 
 def llm_simulate(code: str, model: LLM):
@@ -26,13 +28,25 @@ def my_exec(code, locs):
     exec(code, locs, locs)
 
 
-def run_with_timeout(code, timeout):
+def run_with_timeout(code, timeout, code_context=None):
     def target(queue):
         locs = {}  # Standard dictionary for local variables
         locs["__name__"] = "__main__"
         try:
-            exec(code, locs, locs)  # Execute the code with locs as locals
-            queue.put(locs.get("answer", None))  # Retrieve the value of "answer"
+            if code_context:
+                exec(code_context, locs, locs)
+        except Exception as e:
+            pass
+
+        try:
+            # store stdout in a variable
+            f = StringIO()
+            with redirect_stdout(f):
+                exec(code, locs, locs)  # Execute the code with locs as locals
+            if "answer" in locs:
+                queue.put(locs.get("answer", None))  # Retrieve the value of "answer"
+            else:
+                queue.put(f.getvalue())  # Retrieve the output
         except Exception as e:
             queue.put(f"Error: {e}")
 
@@ -44,8 +58,7 @@ def run_with_timeout(code, timeout):
     if process.is_alive():
         process.terminate()
         process.join()
-        print("Code execution timed out.")
-        return None
+        return None, "Error: Code execution timed out"
 
     # Retrieve result from the queue
     errors = None
@@ -59,7 +72,7 @@ def run_with_timeout(code, timeout):
     return None, errors
 
 
-def python_eval(code: str):
+def python_eval(code: str, code_context: str=None):
     try:
         if "if __name__ == '__main__'" in code:
             code = code.replace(
@@ -76,7 +89,7 @@ def python_eval(code: str):
         # with contextlib.redirect_stdout(None):
         # my_exec(code, locs)
         # run the code with a timeout of 5 seconds and store any output or errors
-        return run_with_timeout(code, 5)
+        return run_with_timeout(code, 5, code_context)
         # return locs["answer"]
     except Exception as e:
         print("Exception:", e)
