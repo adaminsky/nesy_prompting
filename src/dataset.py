@@ -1380,6 +1380,63 @@ Travel Plan:"""
         return len(self.data)
 
 
+class OmniMathDataset(torch.utils.data.Dataset):
+    def __init__(
+        self,
+        split: str = "test",
+        max_samples: Optional[int] = None,
+        allowed_difficulties: Optional[List[float]] = None
+    ):
+        """
+        A Dataset wrapper around the Hugging Face dataset "KbsdJames/Omni-MATH".
+
+        Args:
+            split (str): Which split of the dataset to load ("train", "validation", "test", etc.).
+            max_samples (Optional[int]): If provided, cap the number of samples to this value.
+            allowed_difficulties (Optional[List[float]]): List of allowed difficulties. If provided,
+                only samples whose 'difficulty' is in this list will be retained.
+        """
+        # Load the specified split of the Omni-MATH dataset
+        self.dataset = load_dataset("KbsdJames/Omni-MATH", split=split)
+
+        # If allowed_difficulties is specified, filter the dataset
+        if allowed_difficulties is not None:
+            self.dataset = self.dataset.filter(
+                lambda x: x["difficulty"] in allowed_difficulties
+            )
+
+        # Apply max_samples if specified
+        if max_samples is not None:
+            self.dataset = self.dataset.select(range(min(max_samples, len(self.dataset))))
+
+    def __len__(self) -> int:
+        return len(self.dataset)
+
+    def __getitem__(self, index: int) -> Tuple[Tuple[None, str], str, List[str]]:
+        """
+        Retrieve a single sample from the Omni-MATH dataset.
+
+        Returns:
+            A tuple of the form:
+                (
+                    (None, problem),
+                    answer,
+                    [solution],
+                )
+        """
+        if index < 0 or index >= len(self):
+            raise IndexError(f"Index {index} out of range for dataset of size {len(self)}.")
+
+        item = self.dataset[index]
+
+        problem = item["problem"]
+        answer = item["answer"]
+        solution = item["solution"]
+
+        # Return ((None, problem), answer, [solution])
+        return ( (None, problem), answer, [solution] )
+
+
 def main():
     # d = FOLIODataset()
     # d[0]
