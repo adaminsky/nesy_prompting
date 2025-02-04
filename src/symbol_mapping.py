@@ -693,3 +693,54 @@ def prompting_mapper_structure(
         print(model_output)
         return allowed_symbols[0]
     return allowed_symbols[[str(s) for s in allowed_symbols].index(model_output)]
+
+
+class LLMNet:
+    def __init__(self, model: LLM, input_desc: str, output_desc: str) -> str:
+        self.model = model
+        self.input_desc = input_desc
+        self.output_desc = output_desc
+
+    def forward(self, input: RawInput) -> str:
+        prompt = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": self.input_desc},
+                    {"type": "text", "text": "The input is: "},
+                ],
+            }
+        ]
+        if input.text_input is not None and input.image_input is None:
+            prompt.append({"type": "text", "text": input.text_input})
+        elif input.text_input is None and input.image_input is not None:
+            prompt.extend(
+                [
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img2base64(input.image_input)}"}},
+                ]
+            )
+        else:
+            prompt.extend(
+                [
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img2base64(input.image_input)}"}},
+                    {"type": "text", "text": input.text_input},
+                ]
+            )
+
+        prompt.append({"type": "text", "text": "Output the final answer after 'FINAL ANSWER:'."})
+        prompt.append({"type": "text", "text": self.output_desc})
+
+        sampling_params = SamplingParams(temperature=0.0, max_tokens=5000, top_p=1.0)
+        output = (
+            self.model.chat(prompt, sampling_params=sampling_params, use_tqdm=False)[0]
+            .outputs[0]
+            .text
+        )
+
+        try:
+            ans_str = re.findall(r"FINAL ANSWER:(.*)(?:<|$)", output, re.DOTALL)[-1]
+            if "```" in ans_str:
+                ans_str = re.findall(r"```(.*)```", ans_str, re.DOTALL)[-1]
+            return ans_str.strip()
+        except Exception:
+            return "None"

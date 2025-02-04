@@ -74,3 +74,14 @@ class Function:
             return output, code
 
         return output
+
+class LLMNesy:
+    def __init__(self, symbol_extract, function):
+        self.symbol_extract = symbol_extract
+        self.function = function
+
+    def apply(self, args, return_symbols=False, print_log=False):
+        symbols = self.symbol_extract(*args)
+        if return_symbols:
+            return self.function(*symbols), symbols
+        return self.function(*symbols)
