@@ -47,7 +47,7 @@ class MNISTSumKOrigDataset(torch.utils.data.Dataset):
             labels.append(label)
         sum_label = sum(labels)
 
-        return *imgs, sum_label
+        return imgs, sum_label
 
     def __len__(self):
         return len(self.mnist) // self.k
@@ -121,14 +121,14 @@ class HWFDataset(torch.utils.data.Dataset):
             img_seq.append(img[0])
         img_seq_len = len(img_seq)
 
-        img = np.concatenate(img_seq, axis=1)
-        img = Image.fromarray(img * 255)
+        # img = np.concatenate(img_seq, axis=1)
+        # img = Image.fromarray(img * 255)
 
         # Output is the "res" in the sample of metadata
         res = sample["res"]
 
         # Return (input, output) pair
-        return ((img, None), res)
+        return img_seq, res
 
     def __len__(self):
         return len(self.metadata)
@@ -1218,7 +1218,7 @@ class SudokuDataset(torch.utils.data.Dataset):
         return len(self.data)
 
 
-class ClutrrDataset(torch.utils.data.Dataset):
+class GenClutrrDataset(torch.utils.data.Dataset):
     def __init__(self):
         # load jsonlines
         self.data = []
@@ -1243,14 +1243,49 @@ class ClutrrDataset(torch.utils.data.Dataset):
     
     def __getitem__(self, index):
         story = self.data[index]["text_story"]
+        context = [s.strip() for s in story.split(".") if s.strip() != ""]
         query = self.data[index]["query"]
         name_map = self.data[index]["name_map"]
-        query = f"How is {name_map[str(query[1])]} related to {name_map[str(query[0])]}?"
-        return (None, story + query), self.data[index]["target_gender"], len(name_map), len(self.data[index]["descriptor"].split(","))
+        # query = f"How is {name_map[str(query[1])]} related to {name_map[str(query[0])]}?"
+        query = (name_map[str(query[1])], name_map[str(query[0])])
+        return (context, query), self.data[index]["target_gender"], len(name_map), len(self.data[index]["descriptor"].split(","))
 
     def __len__(self):
         return len(self.data)
     
+
+class ClutrrDataset(torch.utils.data.Dataset):
+    def __init__(self):
+        # load jsonlines
+        # self.data = load_dataset("CLUTRR/v1", "gen_train234_test2to10", split="test").to_list()
+        self.data = []
+        with open("data/CLUTRR/test.jsonl", "r") as f:
+            for line in f:
+                self.data.append(json.loads(line))
+
+        # subsample to 300
+        print("Number of samples:", len(self.data))
+        random.seed(0)
+        self.data = random.sample(self.data, 300)
+        
+        # num_people = [len(d["genders"].split(",")) for d in self.data]
+        # num_people = [len(d["name_map"]) for d in self.data]
+        # # print histogram as text
+        # print("Number of people histogram:")
+        # print(np.histogram(num_people))
+    
+    def __getitem__(self, index):
+        story = self.data[index]["question"].split("\n")[0]
+        context = [s.strip() for s in story.split(".") if s.strip() != ""]
+        # query = self.data[index]["query"]
+        query = self.data[index]["question"].split("\n")[1]
+        # get the two names in [] from the query as a tuple
+        query = str(re.findall(r"\[(.*?)\]", query))
+
+        return (context, query), self.data[index]["answer"].split("#### ")[1]
+
+    def __len__(self):
+        return len(self.data)
     
 
 class TwentyFourGameDataset(torch.utils.data.Dataset):
@@ -1444,7 +1479,9 @@ def main():
     # d = BlocksWorldDataset()
     # d = SudokuDataset()
     d = ClutrrDataset()
+    print(d[10][0][0])
     print(d[10][0][1])
+    print(d[10][0][2])
     print()
     print(d[10][1])
 

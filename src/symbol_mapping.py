@@ -178,7 +178,7 @@ def code_mapper(
     try:
         # json_str = re.findall(r"\{\s*\"answer\"(?:.|\s)*?\}", output)[-1]
         # return json.loads(json_str)["answer"], output, prompt_content
-        if "\[ \\boxed{" in output:
+        if "\\[ \\boxed{" in output:
             ans_str = re.findall(r"\[ \\boxed{(.*)}", output, re.DOTALL)[-1]
 
         if "```python" in output:
@@ -368,7 +368,7 @@ def single_prompt_mapper(
     try:
         # json_str = re.findall(r"\{\s*\"answer\"(?:.|\s)*?\}", output)[-1]
         # return json.loads(json_str)["answer"], output, prompt_content
-        if "\[ \\boxed{" in output:
+        if "\\[ \\boxed{" in output:
             ans_str = re.findall(r"\[ \\boxed{(.*)}", output, re.DOTALL)[-1]
         elif "**FINAL ANSWER:**" in output:
             ans_str = re.findall(r"\*\*FINAL ANSWER:\*\*(.*)(?:<|$)", output, re.DOTALL)[-1]
@@ -702,33 +702,27 @@ class LLMNet:
         self.output_desc = output_desc
 
     def forward(self, input: RawInput) -> str:
-        prompt = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": self.input_desc},
-                    {"type": "text", "text": "The input is: "},
-                ],
-            }
+        prompt_content = [
+            {"type": "text", "text": "Analyze the following input: "},
         ]
         if input.text_input is not None and input.image_input is None:
-            prompt.append({"type": "text", "text": input.text_input})
+            prompt_content.append({"type": "text", "text": input.text_input})
         elif input.text_input is None and input.image_input is not None:
-            prompt.extend(
+            prompt_content.extend(
                 [
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img2base64(input.image_input)}"}},
                 ]
             )
         else:
-            prompt.extend(
+            prompt_content.extend(
                 [
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img2base64(input.image_input)}"}},
                     {"type": "text", "text": input.text_input},
                 ]
             )
+        prompt_content.append({"type": "text", "text": f" Output just {self.output_desc} after 'FINAL ANSWER:'."})
 
-        prompt.append({"type": "text", "text": "Output the final answer after 'FINAL ANSWER:'."})
-        prompt.append({"type": "text", "text": self.output_desc})
+        prompt = [{"role": "user", "content": prompt_content}]
 
         sampling_params = SamplingParams(temperature=0.0, max_tokens=5000, top_p=1.0)
         output = (
@@ -736,11 +730,55 @@ class LLMNet:
             .outputs[0]
             .text
         )
+        print("out:", output)
 
+        extra_args = [re.DOTALL]
         try:
-            ans_str = re.findall(r"FINAL ANSWER:(.*)(?:<|$)", output, re.DOTALL)[-1]
-            if "```" in ans_str:
-                ans_str = re.findall(r"```(.*)```", ans_str, re.DOTALL)[-1]
-            return ans_str.strip()
+            if "\\[ \\boxed{" in output:
+                res = re.findall(r"\[ \\boxed{(.*)}", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "**FINAL ANSWER:**" in output:
+                res = re.findall(r"\*\*FINAL ANS.*:\*\*(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "*FINAL ANSWER:*" in output:
+                res = re.findall(r"\*FINAL ANS.*:(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "**Final Answer:**" in output:
+                res = re.findall(r"\*\*Final Ans.*:\*\*(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "*Final Answer:*" in output:
+                res = re.findall(r"\*Final Ans.*:(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "Final answer:" in output:
+                res = re.findall(r"Final ans.*:(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "*Final answer:*" in output:
+                res = re.findall(r"\*Final ans.*:(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "**Final answer:**" in output:
+                res = re.findall(r"\*\*Final ans.*:\*\*(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "**Answer:**" in output:
+                res = re.findall(r"\*\*Answer:\*\*(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "*Answer:*" in output:
+                res = re.findall(r"\*Answer:\*(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "**Answer**:" in output:
+                res = re.findall(r"\*\*Answer\*\*:(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "*Answer*:" in output:
+                res = re.findall(r"\*Answer\*:(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            else:
+                # print("here", re.findall(r"FINAL ANS.*:(.*)(?:<|$)", output, *extra_args))
+                res = re.findall(r"FINAL ANS.*:(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+
+            if "```" in pred:
+                pred = re.sub(r"```", "", pred).strip()
+            if "<|eot_id|>" in pred:
+                pred = re.sub(r"<\|eot_id\|>", "", pred).strip()
+            return pred
         except Exception:
             return "None"

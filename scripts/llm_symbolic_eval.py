@@ -1,6 +1,6 @@
 import os
 import logging
-from src.dataset import MNISTSumKDataset, GSM8KDataset, ChartQADataset, ClevrDataset, HWFDataset, BlocksWorldDataset, BBHDataset, FOLIODataset, LongSortDataset, ListSynthesisDataset
+from src.dataset import MNISTSumKOrigDataset, GSM8KDataset, ChartQADataset, ClevrDataset, HWFDataset, BlocksWorldDataset, BBHDataset, FOLIODataset, LongSortDataset, ListSynthesisDataset, ClutrrDataset
 from tqdm import tqdm
 import argparse
 from vllm import LLM, SamplingParams
@@ -51,6 +51,7 @@ class OurLLM:
             prompt_content = "".join(prompt_content)
 
         prompt = [{"role": "user", "content": prompt_content}]
+        # print("prompt:", prompt)
 
         if "Llama-3.2" in self.model_name:
             input_text = self.processor.apply_chat_template(prompt, add_generation_prompt=True)
@@ -67,7 +68,8 @@ class OurLLM:
 
         print(f"Tokens per second: {(len(outputs[0][len(inputs['input_ids'][0]):])) / elapsed}")
 
-        output_text = self.processor.decode(outputs[0][len(inputs["input_ids"][0]):])
+        output_text = self.processor.decode(outputs[0][len(inputs["input_ids"][0]):][:-1])
+        print("output:", output_text)
 
         class Outputs:
             def __init__(self, outputs):
@@ -164,7 +166,7 @@ def get_raw_predictions(model: LLM, data, log=False, equiv = None):
         try:
             # res = re.findall(r"\{\s*\"result\"(?:.|\s)*?\}", output)[-1]
             # pred = json.loads(res)["result"]
-            if "\[ \\boxed{" in output:
+            if "\\[ \\boxed{" in output:
                 res = re.findall(r"\[ \\boxed{(.*)}", output)[-1]
                 pred = res.strip()
             elif "**FINAL ANSWER:**" in output:
@@ -203,7 +205,7 @@ def get_raw_predictions(model: LLM, data, log=False, equiv = None):
     return preds, gt, logs
 
 
-def get_task_predictions(task: Function, data, log=False, multi_prompt=False, equiv=None):
+def get_task_predictions(task: LLMNesy, data, log=False, equiv=None):
     preds = []
     logs = []
 
@@ -212,91 +214,27 @@ def get_task_predictions(task: Function, data, log=False, multi_prompt=False, eq
     
     for i in (pbar := tqdm(range(len(data)))):
         try:
-            if multi_prompt:
-                out, code = task.apply_two_stage(
-                    RawInput(*data[i][0]), simulate_code=True, return_code=True, print_log=log
-                )
-                logs.append((out, code))
-            else:
-                out, symbols, prompt_content = task.apply(
-                    RawInput(*data[i][0]), return_symbols=True, print_log=log
-                )
-                logs.append((out, prompt_content, symbols))
+            print(data[i])
+            # data[i] = ((['[Bonita] asked her daughter, [Maryann], if she would like to go to a movie with her on Saturday night', '[Maryann] went to the bakery with her uncle [John] to pick up some bread for lunch'], "('Bonita', 'John')"), 'grandmother') 
+            out, symbols = task.apply(
+                # [RawInput(image_input=d, text_input=None) for d in data[i][0]], return_symbols=True, print_log=log
+                [RawInput(image_input=None, text_input=d) for d in data[i][0]], return_symbols=True, print_log=log
+            )
+            logs.append((out, symbols))
             preds.append(out)
             if log:
                 logger.info("GT: %s, Pred: %s", repr(data[i][1]), repr(out))
         except Exception as e:
-            print(e)
+            print("Error in get predictions:", e)
+            # print stacktrace
+            import traceback
+            traceback.print_exc()
             # get line number
             preds.append(str(-100000))
         pbar.set_description(
             f"Acc: {sum([equiv(data[i][1], preds[i], i) for i in range(len(preds))]) / len(preds)}"
         )
     return preds, logs
-
-
-def sum2_prompts(ex_img1, ex_img2):
-    expl_s = [
-        {
-            "type": "text",
-            "text": "First, extract symbols from the input. The following are some examples of the desired symbol extraction:",
-        },
-        {"type": "text", "text": "Example 1:"},
-        {
-            "type": "image_url",
-            "image_url": {"url": f"data:image/jpeg;base64,{img2base64(ex_img1)}"},
-        },
-        {"type": "text", "text": "The symbols in this image are the integers 8 and 3."},
-        {"type": "text", "text": "Example 2:"},
-        {
-            "type": "image_url",
-            "image_url": {"url": f"data:image/jpeg;base64,{img2base64(ex_img2)}"},
-        },
-        {"type": "text", "text": "The symbols in this image are the integers 6 and 1."},
-    ]
-    impl_s = [
-        {
-            "type": "text",
-            "text": """First, extract symbols from the input. The symbols are two integers between 0 and 9 inclusive.""",
-        }
-    ]
-    inf_s = [{"type": "text", "text": """First, extract symbols from the input."""}]
-
-    expl_fn = [
-        {
-            "type": "text",
-            "text": """Next, compute the following function on the input:
-    def add(x, y):
-        return x + y""",
-        }
-    ]
-    impl_fn = [
-        {
-            "type": "text",
-            "text": """Next, compute the following function on the input:
-    the sum of the inputs""",
-        }
-    ]
-    inf_fn = [
-        {
-            "type": "text",
-            "text": """Next, compute a function on the input by following the examples below:""",
-        },
-        {"type": "text", "text": "Example 1:"},
-        {
-            "type": "image_url",
-            "image_url": {"url": f"data:image/jpeg;base64,{img2base64(ex_img1)}"},
-        },
-        {"type": "text", "text": "The output for this input is 11."},
-        {"type": "text", "text": "Example 2:"},
-        {
-            "type": "image_url",
-            "image_url": {"url": f"data:image/jpeg;base64,{img2base64(ex_img2)}"},
-        },
-        {"type": "text", "text": "The output for this input is 7."},
-    ]
-
-    return (expl_s, impl_s, inf_s, expl_fn, impl_fn, inf_fn)
 
 
 def sum2_extract(data, model):
@@ -308,11 +246,11 @@ def sum2_extract(data, model):
     def parse(*imgs):
         digits = []
         for img in imgs:
-            digits.append(mnist_extract(img))
+            digits.append(int(mnist_extract.forward(img)))
         return digits
 
-    def function(x, y):
-        return x + y
+    def function(*digits):
+        return sum(digits)
 
     return parse, function
 
@@ -451,6 +389,216 @@ def hwf_settings(data):
     inferred_s = None
 
     return (explicit_s, implicit_s, inferred_s, explicit_fn, implicit_fn, inferred_fn)
+
+
+def hwf_extract(data, model):
+    extract_digit = LLMNet(
+        model,
+        "an image of a handwritten digit from 0 to 9",
+        "the value of the digit in the image as an integer from 0 to 9",
+    )
+    extract_operator = LLMNet(
+        model,
+        "an image of a handwritten operator from the set {'+', '-', '*', '/'} where division can be represented by the symbol '÷'",
+        "the value of the operator in the image as a string in the set {'+', '-', '*', '/'}",
+    )
+
+    def parse(*imgs):
+        expr = []
+        for i, img in enumerate(imgs):
+            if i % 2 == 0:
+                expr.append(extract_digit.forward(img))
+            else:
+                expr.append(extract_operator.forward(img))
+        return [expr]
+
+    def function(expr):
+        expr_str = " ".join(expr)
+        return eval(expr_str)
+
+    return parse, function
+
+
+def clutrr_extract(data, model):
+    extract_relation = LLMNet(
+        model,
+        "a description of a relationship between two people and then a question about the two people",
+        "the described relationship which answers the question. The relationship is one of the following: {'daughter', 'sister', 'son', 'aunt', 'father', 'husband', 'brother', 'mother', 'uncle', 'grandfather', 'grandmother'}. For example, for the input 'John took his sister Mary to the store. John is Mary\'s what?' the output should be 'brother.' Output just the relationship as a word.",
+    )
+
+    def parse(context: RawInput, query: RawInput):
+        # Preprocess sentences
+        relation_sentences = []
+        relation_name_pairs = []
+        curr_relation_sentences = []
+        curr_name_pairs = []
+        skip_next = False
+        skip_until = 0
+        for (j, sentence) in enumerate(context.text_input):
+            # It is possible to skip a sentence because the previous one includes the current one.
+            if skip_next:
+                if j >= skip_until:
+                    skip_next = False
+                continue
+
+            # Get all the names of the current sentence
+            names = re.findall("\\[(\w+)\\]", sentence)
+
+            # Check if we need to include the next sentence(s) as well
+            num_sentences_limit = 4
+            num_sentences = 1
+            union_sentence = f"{sentence}"
+            for k in range(j + 1, len(context.text_input)):
+                next_sentence = context.text_input[k]
+                next_sentence_names = re.findall("\\[(\w+)\\]", next_sentence)
+                if (len(names) == 1 or len(next_sentence_names) == 1) and num_sentences < num_sentences_limit:
+                    if len(next_sentence_names) > 0:
+                        num_sentences += 1
+                        union_sentence += f". {next_sentence}"
+                        names += next_sentence_names
+                    skip_next = True
+                    if len(next_sentence_names) == 1:
+                        skip_until = k - 1
+                    else:
+                        skip_until = k
+                else:
+                    break
+
+            # Deduplicate the names
+            names = list(dict.fromkeys(names))
+
+            # Clean up the sentence and add it to the batch
+            clean_sentence = union_sentence.replace("[", "").replace("]", "")
+            curr_relation_sentences += [f"{clean_sentence}. {names[k]} is {names[l]}'s what?" for k in range(len(names)) for l in range(len(names)) if k != l]
+            curr_name_pairs += [(k, l) for k in names for l in names if k != l]
+
+        # Construct the current datatpoint
+        relation_sentences += curr_relation_sentences
+        relation_name_pairs += curr_name_pairs
+
+        facts = []
+        for i in range(len(relation_sentences)):
+            rel = extract_relation.forward(RawInput(image_input=None, text_input=relation_sentences[i]))
+            rel = re.sub(r"[^a-zA-Z]", "", rel)
+            facts.append((relation_name_pairs[i], rel))
+
+        return facts, tuple(query.text_input.replace("[", "").replace("]", "").replace("'", "").split(", "))
+
+    def function(facts, query):
+        rules = {
+            ("daughter", "daughter"): "granddaughter",
+            ("daughter", "sister"): "daughter",
+            ("daughter", "son"): "grandson",
+            ("daughter", "aunt"): "sister",
+            ("daughter", "father"): "husband",
+            ("daughter", "husband"): "son-in-law",
+            ("daughter", "brother"): "son",
+            ("daughter", "mother"): "wife",
+            ("daughter", "uncle"): "brother",
+            ("daughter", "grandfather"): "father",
+            ("daughter", "grandmother"): "mother",
+            ("sister", "daughter"): "niece",
+            ("sister", "sister"): "sister",
+            ("sister", "son"): "nephew",
+            ("sister", "aunt"): "aunt",
+            ("sister", "father"): "father",
+            ("sister", "brother"): "brother",
+            ("sister", "mother"): "mother",
+            ("sister", "uncle"): "uncle",
+            ("sister", "grandfather"): "grandfather",
+            ("sister", "grandmother"): "grandmother",
+            ("son", "daughter"): "granddaughter",
+            ("son", "sister"): "daughter",
+            ("son", "son"): "grandson",
+            ("son", "aunt"): "sister",
+            ("son", "father"): "husband",
+            ("son", "brother"): "son",
+            ("son", "mother"): "wife",
+            ("son", "uncle"): "brother",
+            ("son", "grandfather"): "father",
+            ("son", "wife"): "daughter-in-law",
+            ("son", "grandmother"): "mother",
+            ("aunt", "sister"): "aunt",
+            ("aunt", "father"): "grandfather",
+            ("aunt", "brother"): "uncle",
+            ("aunt", "mother"): "grandmother",
+            ("father", "daughter"): "sister",
+            ("father", "sister"): "aunt",
+            ("father", "son"): "brother",
+            ("father", "father"): "grandfather",
+            ("father", "brother"): "uncle",
+            ("father", "mother"): "grandmother",
+            ("father", "wife"): "mother",
+            ("husband", "daughter"): "daughter",
+            ("husband", "son"): "son",
+            ("husband", "father"): "father-in-law",
+            ("husband", "granddaughter"): "granddaughter",
+            ("husband", "mother"): "mother-in-law",
+            ("husband", "grandson"): "grandson",
+            ("granddaughter", "sister"): "granddaughter",
+            ("granddaughter", "brother"): "grandson",
+            ("brother", "daughter"): "niece",
+            ("brother", "sister"): "sister",
+            ("brother", "son"): "nephew",
+            ("brother", "aunt"): "aunt",
+            ("brother", "father"): "father",
+            ("brother", "brother"): "brother",
+            ("brother", "mother"): "mother",
+            ("brother", "uncle"): "uncle",
+            ("brother", "grandfather"): "grandfather",
+            ("brother", "grandmother"): "grandmother",
+            ("nephew", "sister"): "niece",
+            ("nephew", "brother"): "nephew",
+            ("mother", "daughter"): "sister",
+            ("mother", "sister"): "aunt",
+            ("mother", "son"): "brother",
+            ("mother", "father"): "grandfather",
+            ("mother", "husband"): "father",
+            ("mother", "brother"): "uncle",
+            ("mother", "mother"): "grandmother",
+            ("mother", "father-in-law"): "grandfather",
+            ("mother", "mother-in-law"): "grandmother",
+            ("uncle", "sister"): "aunt",
+            ("uncle", "father"): "grandfather",
+            ("uncle", "brother"): "uncle",
+            ("uncle", "mother"): "grandmother",
+            ("grandfather", "wife"): "grandmother",
+            ("wife", "daughter"): "daughter",
+            ("wife", "son"): "son",
+            ("wife", "father"): "father-in-law",
+            ("wife", "granddaughter"): "granddaughter",
+            ("wife", "mother"): "mother-in-law",
+            ("wife", "grandson"): "grandson",
+            ("wife", "son-in-law"): "son-in-law",
+            ("wife", "father-in-law"): "father",
+            ("wife", "daughter-in-law"): "daughter-in-law",
+            ("wife", "mother-in-law"): "mother",
+            ("grandmother", "husband"): "grandfather",
+            ("grandson", "sister"): "granddaughter",
+            ("grandson", "brother"): "grandson",
+        }
+
+        facts = {(pair[0], pair[1]): rel for pair, rel in facts}
+        last_facts = {}
+        while query not in facts:
+            added_facts = {}
+            for fact1 in facts.items():
+                for fact2 in facts.items():
+                    if fact1[0][0] != fact2[0][1] and fact1[0][1] == fact2[0][0] and (fact2[1], fact1[1]) in rules:
+                        new_fact = rules[(fact2[1], fact1[1])]
+                        added_facts[(fact1[0][0], fact2[0][1])] = new_fact
+            facts.update(added_facts)
+            if last_facts == facts:
+                break
+            last_facts = facts
+        print(facts)
+
+        if query in facts:
+            return facts[query]
+        else:
+            return "Uncertain"
+
+    return parse, function
 
 
 def clevr_settings(data):
@@ -1196,15 +1344,17 @@ def get_equivalence(args):
 
 def create_symbol_extractor(args, model):
     if args.dataset == "sum2":
-        data = MNISTSumKDataset(root="data", train=True, download=True, k=2)
+        data = MNISTSumKOrigDataset(root="data", train=True, download=True, k=5)
+    elif args.dataset == "hwf":
+        data = HWFDataset(root="data", split="train", length=5)
+    elif args.dataset == "clutrr":
+        data = ClutrrDataset()
+    elif args.dataset == "clevr":
+        data = ClevrDataset(max_samples=500)
     elif args.dataset == "chartqa":
         data = ChartQADataset()
     elif args.dataset == "gsm8k":
         data = GSM8KDataset()
-    elif args.dataset == "clevr":
-        data = ClevrDataset(max_samples=500)
-    elif args.dataset == "hwf":
-        data = HWFDataset(root="data", split="train", length=5)
     elif args.dataset == "blocksworld":
         data = BlocksWorldDataset()
     elif args.dataset == "bbh_sort":
@@ -1224,10 +1374,11 @@ def create_symbol_extractor(args, model):
 
     all_get_symbols = {
         "sum2": sum2_extract,
+        "hwf": hwf_extract,
+        "clutrr": clutrr_extract,
+        "clevr": clevr_settings,
         "chartqa": chartqa_settings,
         "gsm8k": gsm8k_settings,
-        "clevr": clevr_settings,
-        "hwf": hwf_settings,
         "blocksworld": blocksworld_settings,
         "bbh_sort": bbh_sort_settings,
         "longsort": long_sort_settings,
@@ -1289,7 +1440,7 @@ def eval(args):
             # if not args.dataset == "gsm8k":
             extra_args.append(re.DOTALL)
             try:
-                if "\[ \\boxed{" in output:
+                if "\\[ \\boxed{" in output:
                     res = re.findall(r"\[ \\boxed{(.*)}", output, *extra_args)[-1]
                     pred = res.strip()
                 elif "**FINAL ANSWER:**" in output:
@@ -1407,25 +1558,17 @@ def main(args):
     results = []
 
     # Select random subset of 200 samples
-    if args.dataset == "chartqa":
-        test_data_ids = (
-            list(range(100))
-            + list(range(103, 1001))
-            + list(range(1002, len(data)))
-        )
-    else:
-        test_data_ids = list(range(100)) + list(range(103, len(data)))
+    test_data_ids = list(range(100)) + list(range(103, len(data)))
     shuf = np.random.permutation(test_data_ids)
-    print(shuf[:10])
     test_data = [data[int(i)] for i in shuf[:200]]
     gt = [test_data[i][1] for i in range(len(test_data))]
 
+    # Run the NeSy task
     task = LLMNesy(get_symbols, function)
     preds, logs = get_task_predictions(
         task,
         test_data,
         log=args.log,
-        multi_prompt=args.multi_prompt,
         equiv=equiv,
     )
 
@@ -1433,22 +1576,21 @@ def main(args):
     print(f"Accuracy:", acc)
     results.append(acc)
     
-    prompt_type = "multi_prompt" if args.multi_prompt else "single_prompt"
     # check if logs/model dir exists
     model_name = args.model.split("/")[-1]
-    if not os.path.exists(f"logs/{('debug/' if args.debug else '') + model_name}/{args.dataset}/{prompt_type}"):
-        os.makedirs(f"logs/{('debug/' if args.debug else '') + model_name}/{args.dataset}/{prompt_type}")
+    if not os.path.exists(f"logs/{('debug/' if args.debug else '') + model_name}/{args.dataset}/"):
+        os.makedirs(f"logs/{('debug/' if args.debug else '') + model_name}/{args.dataset}/")
     with open(
-        f"logs/{('debug/' if args.debug else '') + model_name}/{args.dataset}/{prompt_type}/llm_symbolic.txt",
+        f"logs/{('debug/' if args.debug else '') + model_name}/{args.dataset}/llm_symbolic.txt",
         "w",
     ) as f:
         for log in logs:
             f.write(str(log) + "\n")
 
     # append to results file
-    with open(f"logs/{('debug/' if args.debug else '') + model_name}/{args.dataset}/{prompt_type}/results.txt", "a") as f:
+    with open(f"logs/{('debug/' if args.debug else '') + model_name}/{args.dataset}/results.txt", "a") as f:
         f.write(
-            f"{('debug_' if args.debug else '') + model_name},{args.dataset},{prompt_type},{acc}\n"
+            f"{('debug_' if args.debug else '') + model_name},{args.dataset},{acc}\n"
         )
 
 
@@ -1461,11 +1603,6 @@ if __name__ == "__main__":
     args.add_argument(
         "--model", type=str, default="meta-llama/Llama-3.2-11B-Vision-Instruct"
     )
-    args.add_argument(
-        "--setting", type=str, default=None
-    )
-    args.add_argument("--multi_prompt", action="store_true")
-    args.add_argument("--handwritten", action="store_true")
     args.add_argument("--log", action="store_true")
     args.add_argument("--raw", action="store_true")
     args.add_argument("--num_gpus", type=int, default=1)

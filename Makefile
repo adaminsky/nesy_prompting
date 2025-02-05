@@ -14,7 +14,10 @@ create_environment:
 
 ## Install Python Dependencies
 requirements:
+	$(PYTHON_INTERPRETER) -m pip install torch torchvision torchaudio
+	$(PYTHON_INTERPRETER) -m pip install wheel
 	$(PYTHON_INTERPRETER) -m pip install -r requirements.txt
+	$(PYTHON_INTERPRETER) -m pip install -e .
 
 
 data: requirements
