@@ -696,15 +696,86 @@ def prompting_mapper_structure(
 
 
 class LLMNet:
-    def __init__(self, model: LLM, input_desc: str, output_desc: str) -> str:
+    def __init__(self, model: LLM, input_desc: str, output_desc: str, examples: Optional[IOExamples]=None) -> str:
         self.model = model
         self.input_desc = input_desc
         self.output_desc = output_desc
+        self.examples = examples
 
     def forward(self, input: RawInput) -> str:
-        prompt_content = [
-            {"type": "text", "text": "Analyze the following input: "},
-        ]
+        prompt_content = []
+        #     {"type": "text", "text": "Analyze the following input: "},
+        # ]
+        
+        # # Adding the input to the prompt (text or image)
+        # if input.text_input is not None and input.image_input is None:
+        #     prompt_content.append({"type": "text", "text": input.text_input})
+        # elif input.text_input is None and input.image_input is not None:
+        #     prompt_content.extend(
+        #         [
+        #             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img2base64(input.image_input)}"}},
+        #         ]
+        #     )
+        # else:
+        #     prompt_content.extend(
+        #         [
+        #             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img2base64(input.image_input)}"}},
+        #             {"type": "text", "text": input.text_input},
+        #         ]
+        #     )
+
+        # Adding the output instruction to the prompt
+        prompt_content.append({"type": "text", "text": f"Given {self.input_desc}, output just {self.output_desc} after 'FINAL ANSWER:'. Output just the answer after 'FINAL ANSWER:'."})
+
+        # Adding any the examples to the prompt
+        if self.examples is not None:
+            prompt_content.append(
+                {"type": "text", "text": "\nFor example:"}
+            )
+            for i, (ex_input, ex_output) in enumerate(zip(self.examples.inputs, self.examples.outputs)):
+                symbol_str = ", ".join([json.dumps(o).encode('utf-8').decode('unicode_escape') for o in ex_output])
+                if ex_input.text_input is not None and ex_input.image_input is None:
+                    prompt_content.append(
+                        {
+                            "type": "text",
+                            "text": f"\nInput: {ex_input.text_input}\nOutput: {symbol_str}",
+                        }
+                    )
+                elif ex_input.text_input is None and ex_input.image_input is not None:
+                    prompt_content.extend(
+                        [
+                            {"type": "text", "text": f"\nInput: "},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{img2base64(ex_input.image_input)}"
+                                },
+                            },
+                            {"type": "text", "text": f"\Output: {symbol_str}"},
+                        ]
+                    )
+                else:
+                    prompt_content.extend(
+                        [
+                            {"type": "text", "text": f"\nInput: "},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{img2base64(ex_input.image_input)}"
+                                },
+                            },
+                            {
+                                "type": "text",
+                                "text": f", {ex_input.text_input}\nOutput: {symbol_str}",
+                            },
+                        ]
+                    )
+
+        prompt_content.append(
+            {"type": "text", "text": "\nAnalyze the following input: "},
+        )
+        
+        # Adding the input to the prompt (text or image)
         if input.text_input is not None and input.image_input is None:
             prompt_content.append({"type": "text", "text": input.text_input})
         elif input.text_input is None and input.image_input is not None:
@@ -720,7 +791,7 @@ class LLMNet:
                     {"type": "text", "text": input.text_input},
                 ]
             )
-        prompt_content.append({"type": "text", "text": f" Output just {self.output_desc} after 'FINAL ANSWER:'."})
+        prompt_content.append({"type": "text", "text": f"Output just {self.output_desc} after 'FINAL ANSWER:'."})
 
         prompt = [{"role": "user", "content": prompt_content}]
 
@@ -772,7 +843,7 @@ class LLMNet:
                 pred = res.strip()
             else:
                 # print("here", re.findall(r"FINAL ANS.*:(.*)(?:<|$)", output, *extra_args))
-                res = re.findall(r"FINAL ANS.*:(.*)(?:<|$)", output, *extra_args)[-1]
+                res = re.findall(r"FINAL ANSWER:(.*)(?:<|$)", output, *extra_args)[-1]
                 pred = res.strip()
 
             if "```" in pred:

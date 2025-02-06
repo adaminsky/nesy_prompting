@@ -99,12 +99,12 @@ class HWFDataset(torch.utils.data.Dataset):
         else:
             self.metadata = md
 
-        self.img_transform = torchvision.transforms.Compose(
-            [
-                torchvision.transforms.ToTensor(),
-                # torchvision.transforms.Normalize((0.5,), (1,)),
-            ]
-        )
+        # self.img_transform = torchvision.transforms.Compose(
+        #     [
+        #         torchvision.transforms.ToTensor(),
+        #         # torchvision.transforms.Normalize((0.5,), (1,)),
+        #     ]
+        # )
 
     def __getitem__(self, index):
         sample = self.metadata[index]
@@ -115,11 +115,11 @@ class HWFDataset(torch.utils.data.Dataset):
             img_full_path = os.path.join(
                 self.root, "HWF/Handwritten_Math_Symbols", img_path
             )
-            img = Image.open(img_full_path)
-            img = self.img_transform(img)
-            print(img.shape)
-            img_seq.append(img[0])
-        img_seq_len = len(img_seq)
+            img = Image.open(img_full_path).convert("RGB")
+            # img = self.img_transform(img)
+            # print(img.shape)
+            img_seq.append(img)
+        # img_seq_len = len(img_seq)
 
         # img = np.concatenate(img_seq, axis=1)
         # img = Image.fromarray(img * 255)
@@ -128,7 +128,7 @@ class HWFDataset(torch.utils.data.Dataset):
         res = sample["res"]
 
         # Return (input, output) pair
-        return img_seq, res
+        return img_seq, res, sample['expr']
 
     def __len__(self):
         return len(self.metadata)
@@ -1282,7 +1282,7 @@ class ClutrrDataset(torch.utils.data.Dataset):
         # get the two names in [] from the query as a tuple
         query = str(re.findall(r"\[(.*?)\]", query))
 
-        return (context, query), self.data[index]["answer"].split("#### ")[1]
+        return (story, query), self.data[index]["answer"].split("#### ")[1]
 
     def __len__(self):
         return len(self.data)

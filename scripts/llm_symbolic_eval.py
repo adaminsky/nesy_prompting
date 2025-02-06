@@ -58,7 +58,7 @@ class OurLLM:
             inputs = self.processor(imgs if len(imgs) > 0 else None, input_text, add_special_tokens=False, return_tensors="pt").to("cuda:0")
         elif "Qwen" in self.model_name:
             input_text = self.processor.apply_chat_template(prompt, tokenize=False, add_generation_prompt=True)
-            inputs = self.processor(input_text, return_tensors="pt").to("cuda:0")
+            inputs = self.processor(input_text, return_tensors="pt", add_special_tokens=False).to("cuda:0")
 
         print(self.processor.decode(inputs["input_ids"][0]))
         start = time.time()
@@ -216,14 +216,21 @@ def get_task_predictions(task: LLMNesy, data, log=False, equiv=None):
         try:
             print(data[i])
             # data[i] = ((['[Bonita] asked her daughter, [Maryann], if she would like to go to a movie with her on Saturday night', '[Maryann] went to the bakery with her uncle [John] to pick up some bread for lunch'], "('Bonita', 'John')"), 'grandmother') 
-            out, symbols = task.apply(
-                # [RawInput(image_input=d, text_input=None) for d in data[i][0]], return_symbols=True, print_log=log
-                [RawInput(image_input=None, text_input=d) for d in data[i][0]], return_symbols=True, print_log=log
-            )
+            if type(data[i][0][0]) == str or (type(data[i][0][0]) == list and type(data[i][0][0][0]) == str):
+                out, symbols = task.apply(
+                    [RawInput(image_input=None, text_input=d) for d in data[i][0]], return_symbols=True, print_log=log
+                )
+            else:
+                out, symbols = task.apply(
+                    [RawInput(image_input=d, text_input=None) for d in data[i][0]], return_symbols=True, print_log=log
+                )
             logs.append((out, symbols))
             preds.append(out)
             if log:
                 logger.info("GT: %s, Pred: %s", repr(data[i][1]), repr(out))
+
+                if len(data[i]) > 2:
+                    logger.info("Metadata: %s", repr(data[i][2]))
         except Exception as e:
             print("Error in get predictions:", e)
             # print stacktrace
@@ -246,7 +253,7 @@ def sum2_extract(data, model):
     def parse(*imgs):
         digits = []
         for img in imgs:
-            digits.append(int(mnist_extract.forward(img)))
+            digits.append(int(re.sub(r"[^0-9]", "", mnist_extract.forward(img))))
         return digits
 
     def function(*digits):
@@ -396,20 +403,30 @@ def hwf_extract(data, model):
         model,
         "an image of a handwritten digit from 0 to 9",
         "the value of the digit in the image as an integer from 0 to 9",
+        # IOExamples(
+        #     description=None,
+        #     inputs=[RawInput(image_input=data[101][0][0], text_input=None)],
+        #     outputs=[[2]],
+        # )
     )
     extract_operator = LLMNet(
         model,
-        "an image of a handwritten operator from the set {'+', '-', '*', '/'} where division can be represented by the symbol '÷'",
-        "the value of the operator in the image as a string in the set {'+', '-', '*', '/'}",
+        "a handwritten arithmetic operator",
+        "the operator in the image as a string in the set {'+', '-', '*', '/'}",
+        IOExamples(
+            description=None,
+            inputs=[RawInput(image_input=data[101][0][1], text_input=None), RawInput(image_input=data[101][0][3], text_input=None), RawInput(image_input=data[102][0][3], text_input=None), RawInput(image_input=data[103][0][1], text_input=None)],
+            outputs=[['/'], ['*'], ['-'], ['+']],
+        )
     )
 
     def parse(*imgs):
         expr = []
         for i, img in enumerate(imgs):
             if i % 2 == 0:
-                expr.append(extract_digit.forward(img))
+                expr.append(re.sub(r"[^0-9]", "", extract_digit.forward(img)))
             else:
-                expr.append(extract_operator.forward(img))
+                expr.append(re.sub(r"[^\*/\+\-]", "", extract_operator.forward(img)))
         return [expr]
 
     def function(expr):
@@ -420,165 +437,90 @@ def hwf_extract(data, model):
 
 
 def clutrr_extract(data, model):
-    extract_relation = LLMNet(
+    # extract_relation = LLMNet(
+    #     model,
+    #     "a description of a relationship between two people and then a question about the two people",
+    #     "the described relationship which answers the question. The relationship is one of the following: {'brother', 'sister', 'father', 'mother', 'son', 'daughter', 'grandfather', 'grandmother', 'uncle', 'aunt', 'nephew', 'niece', 'husband', 'wife', 'brother-in-law', 'sister-in-law', 'son-in-law', 'daughter-in-law', 'father-in-law', 'mother-in-law', 'grandson', 'granddaughter'}. For example, for the input 'John took his sister Mary to the store. John is Mary\'s what?' the output should be 'brother.' Output just the relationship as a word.",
+    # )
+    extract_relations = LLMNet(
         model,
-        "a description of a relationship between two people and then a question about the two people",
-        "the described relationship which answers the question. The relationship is one of the following: {'daughter', 'sister', 'son', 'aunt', 'father', 'husband', 'brother', 'mother', 'uncle', 'grandfather', 'grandmother'}. For example, for the input 'John took his sister Mary to the store. John is Mary\'s what?' the output should be 'brother.' Output just the relationship as a word.",
+        "a story about how people are related to each other",
+        "a string representing a Python dictionary mapping pairs of people to their relationship where the relationship is one of the following: {'brother', 'sister', 'father', 'mother', 'son', 'daughter', 'grandfather', 'grandmother', 'uncle', 'aunt', 'nephew', 'niece', 'husband', 'wife', 'brother-in-law', 'sister-in-law', 'son-in-law', 'daughter-in-law', 'father-in-law', 'mother-in-law', 'grandson', 'granddaughter'}",
+        IOExamples(
+            description=None,
+            inputs=[RawInput(image_input=None, text_input="Bob is the son of John.")],
+            outputs=[['{("Bob", "John"): "son", ("John", "Bob"): "father"}']],
+        )
     )
 
     def parse(context: RawInput, query: RawInput):
-        # Preprocess sentences
-        relation_sentences = []
-        relation_name_pairs = []
-        curr_relation_sentences = []
-        curr_name_pairs = []
-        skip_next = False
-        skip_until = 0
-        for (j, sentence) in enumerate(context.text_input):
-            # It is possible to skip a sentence because the previous one includes the current one.
-            if skip_next:
-                if j >= skip_until:
-                    skip_next = False
-                continue
+        out_dict = extract_relations.forward(context)
+        print("out_dict:", out_dict)
+        out_dict = ast.literal_eval(out_dict)
+        return out_dict, tuple(query.text_input.replace("[", "").replace("]", "").replace("'", "").split(", "))
 
-            # Get all the names of the current sentence
-            names = re.findall("\\[(\w+)\\]", sentence)
+    # def parse(context: RawInput, query: RawInput):
+    #     # Preprocess sentences
+    #     relation_sentences = []
+    #     relation_name_pairs = []
+    #     curr_relation_sentences = []
+    #     curr_name_pairs = []
+    #     skip_next = False
+    #     skip_until = 0
+    #     for (j, sentence) in enumerate(context.text_input):
+    #         # It is possible to skip a sentence because the previous one includes the current one.
+    #         if skip_next:
+    #             if j >= skip_until:
+    #                 skip_next = False
+    #             continue
 
-            # Check if we need to include the next sentence(s) as well
-            num_sentences_limit = 4
-            num_sentences = 1
-            union_sentence = f"{sentence}"
-            for k in range(j + 1, len(context.text_input)):
-                next_sentence = context.text_input[k]
-                next_sentence_names = re.findall("\\[(\w+)\\]", next_sentence)
-                if (len(names) == 1 or len(next_sentence_names) == 1) and num_sentences < num_sentences_limit:
-                    if len(next_sentence_names) > 0:
-                        num_sentences += 1
-                        union_sentence += f". {next_sentence}"
-                        names += next_sentence_names
-                    skip_next = True
-                    if len(next_sentence_names) == 1:
-                        skip_until = k - 1
-                    else:
-                        skip_until = k
-                else:
-                    break
+    #         # Get all the names of the current sentence
+    #         names = re.findall(r"\[(\w+)\]", sentence)
 
-            # Deduplicate the names
-            names = list(dict.fromkeys(names))
+    #         # Check if we need to include the next sentence(s) as well
+    #         num_sentences_limit = 4
+    #         num_sentences = 1
+    #         union_sentence = f"{sentence}"
+    #         for k in range(j + 1, len(context.text_input)):
+    #             next_sentence = context.text_input[k]
+    #             next_sentence_names = re.findall(r"\[(\w+)\]", next_sentence)
+    #             if (len(names) == 1 or len(next_sentence_names) == 1) and num_sentences < num_sentences_limit:
+    #                 if len(next_sentence_names) > 0:
+    #                     num_sentences += 1
+    #                     union_sentence += f". {next_sentence}"
+    #                     names += next_sentence_names
+    #                 skip_next = True
+    #                 if len(next_sentence_names) == 1:
+    #                     skip_until = k - 1
+    #                 else:
+    #                     skip_until = k
+    #             else:
+    #                 break
 
-            # Clean up the sentence and add it to the batch
-            clean_sentence = union_sentence.replace("[", "").replace("]", "")
-            curr_relation_sentences += [f"{clean_sentence}. {names[k]} is {names[l]}'s what?" for k in range(len(names)) for l in range(len(names)) if k != l]
-            curr_name_pairs += [(k, l) for k in names for l in names if k != l]
+    #         # Deduplicate the names
+    #         names = list(dict.fromkeys(names))
 
-        # Construct the current datatpoint
-        relation_sentences += curr_relation_sentences
-        relation_name_pairs += curr_name_pairs
+    #         # Clean up the sentence and add it to the batch
+    #         clean_sentence = union_sentence.replace("[", "").replace("]", "")
+    #         curr_relation_sentences += [f"{clean_sentence}. {names[k]} is {names[l]}'s what?" for k in range(len(names)) for l in range(len(names)) if k != l]
+    #         curr_name_pairs += [(k, l) for k in names for l in names if k != l]
 
-        facts = []
-        for i in range(len(relation_sentences)):
-            rel = extract_relation.forward(RawInput(image_input=None, text_input=relation_sentences[i]))
-            rel = re.sub(r"[^a-zA-Z]", "", rel)
-            facts.append((relation_name_pairs[i], rel))
+    #     # Construct the current datatpoint
+    #     relation_sentences += curr_relation_sentences
+    #     relation_name_pairs += curr_name_pairs
 
-        return facts, tuple(query.text_input.replace("[", "").replace("]", "").replace("'", "").split(", "))
+    #     facts = []
+    #     for i in range(len(relation_sentences)):
+    #         rel = extract_relation.forward(RawInput(image_input=None, text_input=relation_sentences[i]))
+    #         rel = re.sub(r"[^a-zA-Z\-]", "", rel)
+    #         facts.append((relation_name_pairs[i], rel))
+
+    #     return facts, tuple(query.text_input.replace("[", "").replace("]", "").replace("'", "").split(", "))
 
     def function(facts, query):
-        rules = {
-            ("daughter", "daughter"): "granddaughter",
-            ("daughter", "sister"): "daughter",
-            ("daughter", "son"): "grandson",
-            ("daughter", "aunt"): "sister",
-            ("daughter", "father"): "husband",
-            ("daughter", "husband"): "son-in-law",
-            ("daughter", "brother"): "son",
-            ("daughter", "mother"): "wife",
-            ("daughter", "uncle"): "brother",
-            ("daughter", "grandfather"): "father",
-            ("daughter", "grandmother"): "mother",
-            ("sister", "daughter"): "niece",
-            ("sister", "sister"): "sister",
-            ("sister", "son"): "nephew",
-            ("sister", "aunt"): "aunt",
-            ("sister", "father"): "father",
-            ("sister", "brother"): "brother",
-            ("sister", "mother"): "mother",
-            ("sister", "uncle"): "uncle",
-            ("sister", "grandfather"): "grandfather",
-            ("sister", "grandmother"): "grandmother",
-            ("son", "daughter"): "granddaughter",
-            ("son", "sister"): "daughter",
-            ("son", "son"): "grandson",
-            ("son", "aunt"): "sister",
-            ("son", "father"): "husband",
-            ("son", "brother"): "son",
-            ("son", "mother"): "wife",
-            ("son", "uncle"): "brother",
-            ("son", "grandfather"): "father",
-            ("son", "wife"): "daughter-in-law",
-            ("son", "grandmother"): "mother",
-            ("aunt", "sister"): "aunt",
-            ("aunt", "father"): "grandfather",
-            ("aunt", "brother"): "uncle",
-            ("aunt", "mother"): "grandmother",
-            ("father", "daughter"): "sister",
-            ("father", "sister"): "aunt",
-            ("father", "son"): "brother",
-            ("father", "father"): "grandfather",
-            ("father", "brother"): "uncle",
-            ("father", "mother"): "grandmother",
-            ("father", "wife"): "mother",
-            ("husband", "daughter"): "daughter",
-            ("husband", "son"): "son",
-            ("husband", "father"): "father-in-law",
-            ("husband", "granddaughter"): "granddaughter",
-            ("husband", "mother"): "mother-in-law",
-            ("husband", "grandson"): "grandson",
-            ("granddaughter", "sister"): "granddaughter",
-            ("granddaughter", "brother"): "grandson",
-            ("brother", "daughter"): "niece",
-            ("brother", "sister"): "sister",
-            ("brother", "son"): "nephew",
-            ("brother", "aunt"): "aunt",
-            ("brother", "father"): "father",
-            ("brother", "brother"): "brother",
-            ("brother", "mother"): "mother",
-            ("brother", "uncle"): "uncle",
-            ("brother", "grandfather"): "grandfather",
-            ("brother", "grandmother"): "grandmother",
-            ("nephew", "sister"): "niece",
-            ("nephew", "brother"): "nephew",
-            ("mother", "daughter"): "sister",
-            ("mother", "sister"): "aunt",
-            ("mother", "son"): "brother",
-            ("mother", "father"): "grandfather",
-            ("mother", "husband"): "father",
-            ("mother", "brother"): "uncle",
-            ("mother", "mother"): "grandmother",
-            ("mother", "father-in-law"): "grandfather",
-            ("mother", "mother-in-law"): "grandmother",
-            ("uncle", "sister"): "aunt",
-            ("uncle", "father"): "grandfather",
-            ("uncle", "brother"): "uncle",
-            ("uncle", "mother"): "grandmother",
-            ("grandfather", "wife"): "grandmother",
-            ("wife", "daughter"): "daughter",
-            ("wife", "son"): "son",
-            ("wife", "father"): "father-in-law",
-            ("wife", "granddaughter"): "granddaughter",
-            ("wife", "mother"): "mother-in-law",
-            ("wife", "grandson"): "grandson",
-            ("wife", "son-in-law"): "son-in-law",
-            ("wife", "father-in-law"): "father",
-            ("wife", "daughter-in-law"): "daughter-in-law",
-            ("wife", "mother-in-law"): "mother",
-            ("grandmother", "husband"): "grandfather",
-            ("grandson", "sister"): "granddaughter",
-            ("grandson", "brother"): "grandson",
-        }
+        rules = {('sister-in-law', 'brother'): 'brother-in-law', ('sister-in-law', 'sister'): 'sister-in-law', ('brother-in-law', 'brother'): 'brother-in-law', ('brother-in-law', 'sister'): 'sister-in-law', ('daughter-in-law', 'daughter'): 'granddaughter', ('daughter-in-law', 'son'): 'grandson', ('son-in-law', 'daughter'): 'granddaughter', ('son-in-law', 'son'): 'grandson', ('nephew', 'sister'): 'niece', ('nephew', 'brother'): 'nephew', ('niece', 'sister'): 'niece', ('niece', 'brother'): 'nephew', ('grandson', 'aunt'): 'daughter', ('grandson', 'uncle'): 'son', ('granddaughter', 'aunt'): 'daughter', ('granddaughter', 'uncle'): 'son', ('brother-in-law', 'son'): 'nephew', ('sister-in-law', 'son'): 'nephew', ('brother-in-law', 'daughter'): 'niece', ('sister-in-law', 'daughter'): 'niece', ('sister-in-law', 'father'): 'father-in-law', ('grandson', 'brother'): 'grandson', ('grandson', 'father'): 'son', ('grandson', 'sister'): 'granddaughter', ('niece', 'grandfather'): 'father', ('grandmother', 'husband'): 'grandfather', ('wife', 'mother'): 'mother-in-law', ('wife', 'brother'): 'brother-in-law', ('wife', 'sister'): 'sister-in-law', ('wife', 'mother-in-law'): 'mother', ('wife', 'daughter-in-law'): 'daughter-in-law', ('wife', 'father-in-law'): 'father', ('wife', 'son-in-law'): 'son-in-law', ('wife', 'grandson'): 'grandson', ('wife', 'granddaughter'): 'granddaughter', ('wife', 'father'): 'father-in-law', ('wife', 'son'): 'son', ('wife', 'daughter'): 'daughter', ('grandfather', 'wife'): 'grandmother', ('grandfather', 'son'): 'father', ('grandfather', 'daughter'): 'mother', ('uncle', 'mother'): 'grandmother', ('uncle', 'brother'): 'uncle', ('uncle', 'father'): 'grandfather', ('uncle', 'sister'): 'aunt', ('mother', 'mother-in-law'): 'grandmother', ('mother', 'daughter-in-law'): 'wife', ('mother', 'father-in-law'): 'grandfather', ('mother', 'son-in-law'): 'husband', ('mother', 'grandson'): 'son', ('mother', 'mother'): 'grandmother', ('mother', 'brother'): 'uncle', ('mother', 'granddaughter'): 'daughter', ('mother', 'husband'): 'father', ('mother', 'father'): 'grandfather', ('mother', 'son'): 'brother', ('mother', 'sister'): 'aunt', ('mother', 'daughter'): 'sister', ('nephew', 'grandmother'): 'mother', ('nephew', 'grandfather'): 'father', ('nephew', 'uncle'): 'brother', ('nephew', 'mother'): 'sister', ('nephew', 'father'): 'brother', ('nephew', 'aunt'): 'sister', ('brother', 'niece'): 'niece', ('brother', 'grandmother'): 'grandmother', ('brother', 'grandfather'): 'grandfather', ('brother', 'uncle'): 'uncle', ('brother', 'mother'): 'mother', ('brother', 'nephew'): 'nephew', ('brother', 'brother'): 'brother', ('brother', 'father'): 'father', ('brother', 'aunt'): 'aunt', ('brother', 'son'): 'nephew', ('brother', 'sister'): 'sister', ('brother', 'daughter'): 'niece', ('granddaughter', 'grandmother'): 'wife', ('granddaughter', 'grandfather'): 'husband', ('granddaughter', 'mother'): 'daughter', ('granddaughter', 'brother'): 'grandson', ('granddaughter', 'father'): 'son', ('granddaughter', 'sister'): 'granddaughter', ('husband', 'grandson'): 'grandson', ('husband', 'mother'): 'mother-in-law', ('husband', 'brother'): 'brother-in-law', ('husband', 'granddaughter'): 'granddaughter', ('husband', 'father'): 'father-in-law', ('husband', 'son'): 'son', ('husband', 'sister'): 'sister-in-law', ('husband', 'daughter'): 'daughter', ('father', 'wife'): 'mother', ('father', 'mother'): 'grandmother', ('father', 'brother'): 'uncle', ('father', 'granddaughter'): 'daughter', ('father', 'father'): 'grandfather', ('father', 'son'): 'brother', ('father', 'sister'): 'aunt', ('father', 'daughter'): 'sister', ('aunt', 'mother'): 'grandmother', ('aunt', 'brother'): 'uncle', ('aunt', 'father'): 'grandfather', ('aunt', 'sister'): 'aunt', ('son', 'grandmother'): 'mother', ('son', 'wife'): 'daughter-in-law', ('son', 'grandfather'): 'father', ('son', 'uncle'): 'brother', ('son', 'mother'): 'wife', ('son', 'brother'): 'son', ('son', 'father'): 'husband', ('son', 'aunt'): 'sister', ('son', 'son'): 'grandson', ('son', 'sister'): 'daughter', ('son', 'daughter'): 'granddaughter', ('sister', 'niece'): 'niece', ('sister', 'grandmother'): 'grandmother', ('sister', 'grandfather'): 'grandfather', ('sister', 'uncle'): 'uncle', ('sister', 'mother'): 'mother', ('sister', 'nephew'): 'nephew', ('sister', 'brother'): 'brother', ('sister', 'husband'): 'brother-in-law', ('sister', 'father'): 'father', ('sister', 'aunt'): 'aunt', ('sister', 'son'): 'nephew', ('sister', 'sister'): 'sister', ('sister', 'daughter'): 'niece', ('daughter', 'grandmother'): 'mother', ('daughter', 'grandfather'): 'father', ('daughter', 'uncle'): 'brother', ('daughter', 'mother'): 'wife', ('daughter', 'brother'): 'son', ('daughter', 'husband'): 'son-in-law', ('daughter', 'father'): 'husband', ('daughter', 'aunt'): 'sister', ('daughter', 'son'): 'grandson', ('daughter', 'sister'): 'daughter', ('daughter', 'daughter'): 'granddaughter', ('niece', 'father'): 'brother', ('niece', 'mother'): 'sister', ('sister', 'wife'): 'sister-in-law', ('brother', 'husband'): 'brother-in-law', ('brother', 'wife'): 'sister-in-law', ('sister-in-law', 'mother'): 'mother-in-law', ('brother-in-law', 'father'): 'father-in-law', ('brother-in-law', 'mother'): 'mother-in-law', ('grandmother', 'daughter'): 'mother', ('grandmother', 'son'): 'father', ('mother-in-law', 'daughter'): 'wife', ('father-in-law', 'daughter'): 'wife', ('sister-in-law', 'husband'): 'brother-in-law', ('brother-in-law', 'wife'): 'sister-in-law', ('mother-in-law', 'son'): 'brother-in-law', ('husband', 'wife'): 'self', ('wife', 'husband'): 'self', ('grandson', 'mother'): 'daughter', ('cousin', 'grandmother'): 'grandmother', ('cousin', 'grandfather'): 'grandfather', ('aunt', 'son'): 'cousin', ('aunt', 'daughter'): 'cousin', ('uncle', 'son'): 'cousin', ('uncle', 'daughter'): 'cousin', ('niece', 'grandmother'): 'mother', ('niece', 'uncle'): 'brother', ('niece', 'aunt'): 'sister', ('cousin', 'uncle'): 'uncle', ('cousin', 'aunt'): 'aunt', ('grandson', 'grandfather'): 'husband', ('grandson', 'grandmother'): 'wife', ('cousin', 'mother'): 'aunt', ('cousin', 'father'): 'uncle', ('cousin', 'sister'): 'sister', ('cousin', 'brother'): 'brother', ('father-in-law', 'son'): 'husband', ('mother-in-law', 'husband'): 'father-in-law', ('father-in-law', 'wife'): 'mother-in-law', ('aunt', 'husband'): 'uncle', ('uncle', 'wife'): 'aunt'}
 
-        facts = {(pair[0], pair[1]): rel for pair, rel in facts}
+        # facts = {(pair[0], pair[1]): rel for pair, rel in facts}
         last_facts = {}
         while query not in facts:
             added_facts = {}
@@ -1393,7 +1335,7 @@ def create_symbol_extractor(args, model):
 
 
 
-def eval(args):
+def eval_cached(args):
     data, settings = get_dataset_settings(args)
     equiv = get_equivalence(args)
 
@@ -1614,6 +1556,6 @@ if __name__ == "__main__":
     logger.info("Starting")
 
     if args.eval:
-        eval(args)
+        eval_cached(args)
     else:
         main(args)
