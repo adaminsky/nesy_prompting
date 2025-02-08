@@ -703,7 +703,7 @@ class LLMNet:
         self.examples = examples
 
     def forward(self, input: RawInput) -> str:
-        prompt_content = []
+        prompt = []
         #     {"type": "text", "text": "Analyze the following input: "},
         # ]
         
@@ -725,39 +725,36 @@ class LLMNet:
         #     )
 
         # Adding the output instruction to the prompt
-        prompt_content.append({"type": "text", "text": f"Given {self.input_desc}, output just {self.output_desc} after 'FINAL ANSWER:'. Output just the answer after 'FINAL ANSWER:'."})
+        # prompt_content.append({"type": "text", "text": f"Given {self.input_desc}, output just {self.output_desc} after 'FINAL ANSWER:'."})
+
 
         # Adding any the examples to the prompt
         if self.examples is not None:
-            prompt_content.append(
-                {"type": "text", "text": "\nFor example:"}
-            )
             for i, (ex_input, ex_output) in enumerate(zip(self.examples.inputs, self.examples.outputs)):
+                prompt_content = []
+
                 symbol_str = ", ".join([json.dumps(o).encode('utf-8').decode('unicode_escape') for o in ex_output])
                 if ex_input.text_input is not None and ex_input.image_input is None:
                     prompt_content.append(
                         {
                             "type": "text",
-                            "text": f"\nInput: {ex_input.text_input}\nOutput: {symbol_str}",
+                            "text": f"{ex_input.text_input}",
                         }
                     )
                 elif ex_input.text_input is None and ex_input.image_input is not None:
                     prompt_content.extend(
                         [
-                            {"type": "text", "text": f"\nInput: "},
                             {
                                 "type": "image_url",
                                 "image_url": {
                                     "url": f"data:image/jpeg;base64,{img2base64(ex_input.image_input)}"
                                 },
                             },
-                            {"type": "text", "text": f"\Output: {symbol_str}"},
                         ]
                     )
                 else:
                     prompt_content.extend(
                         [
-                            {"type": "text", "text": f"\nInput: "},
                             {
                                 "type": "image_url",
                                 "image_url": {
@@ -766,15 +763,18 @@ class LLMNet:
                             },
                             {
                                 "type": "text",
-                                "text": f", {ex_input.text_input}\nOutput: {symbol_str}",
+                                "text": f"{ex_input.text_input}",
                             },
                         ]
                     )
+                prompt_content.append(
+                    {"type": "text", "text": f" The above is {self.input_desc}. Output just {self.output_desc} after 'FINAL ANSWER:'. The input is: "}
+                )
+                prompt.append({"role": "user", "content": prompt_content})
+                prompt.append({"role": "assistant", "content": [{"type": "text", "text": f"FINAL ANSWER: {symbol_str}"}]})
 
-        prompt_content.append(
-            {"type": "text", "text": "\nAnalyze the following input: "},
-        )
-        
+        prompt_content = []
+
         # Adding the input to the prompt (text or image)
         if input.text_input is not None and input.image_input is None:
             prompt_content.append({"type": "text", "text": input.text_input})
@@ -791,9 +791,15 @@ class LLMNet:
                     {"type": "text", "text": input.text_input},
                 ]
             )
-        prompt_content.append({"type": "text", "text": f"Output just {self.output_desc} after 'FINAL ANSWER:'."})
+        prompt_content.append(
+            {"type": "text", "text": f" The above is {self.input_desc}. Output just {self.output_desc} after 'FINAL ANSWER:'.\nThe input is: "}
+        )
+        
+        # prompt_content.append({"type": "text", "text": f"Output just {self.output_desc} after 'FINAL ANSWER:'."})
+        # prompt_content.append({"type": "text", "text": " Make sure to output only the answer after 'FINAL ANSWER:'."})
 
-        prompt = [{"role": "user", "content": prompt_content}]
+        prompt.append({"role": "user", "content": prompt_content})
+        # prompt = [{"role": "user", "content": prompt_content}]
 
         sampling_params = SamplingParams(temperature=0.0, max_tokens=5000, top_p=1.0)
         output = (

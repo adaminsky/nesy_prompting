@@ -19,6 +19,8 @@ import itertools
 import copy
 from sudoku import Sudoku
 import re
+import csv
+import ast
 logger = logging.getLogger(__name__)
 
 
@@ -31,12 +33,14 @@ class MNISTSumKOrigDataset(torch.utils.data.Dataset):
         target_transform=None,
         download=False,
         k=2,
+        concatenate=False,
     ):
         self.mnist = torchvision.datasets.MNIST(
             root, train, transform, target_transform, download
         )
         self.train = train
         self.k = k
+        self.concatenate = concatenate
 
     def __getitem__(self, index):
         imgs = []
@@ -87,10 +91,11 @@ class MNISTSumKDataset(torch.utils.data.Dataset):
 
 
 class HWFDataset(torch.utils.data.Dataset):
-    def __init__(self, root: str, split: str, length: int):
+    def __init__(self, root: str, split: str, length: int, concatenate=False):
         super(HWFDataset, self).__init__()
         self.root = root
         self.split = split
+        self.concatenate = concatenate
         md = json.load(open(os.path.join(root, f"HWF/expr_{split}.json")))
 
         # finding only the metadata with length == 1
@@ -121,8 +126,9 @@ class HWFDataset(torch.utils.data.Dataset):
             img_seq.append(img)
         # img_seq_len = len(img_seq)
 
-        # img = np.concatenate(img_seq, axis=1)
-        # img = Image.fromarray(img * 255)
+        if self.concatenate:
+            img = np.concatenate([np.array(img) for img in img_seq], axis=1)
+            img_seq = Image.fromarray(img * 255)
 
         # Output is the "res" in the sample of metadata
         res = sample["res"]
@@ -1259,14 +1265,20 @@ class ClutrrDataset(torch.utils.data.Dataset):
         # load jsonlines
         # self.data = load_dataset("CLUTRR/v1", "gen_train234_test2to10", split="test").to_list()
         self.data = []
-        with open("data/CLUTRR/test.jsonl", "r") as f:
-            for line in f:
-                self.data.append(json.loads(line))
+        # with open("data/CLUTRR/test.jsonl", "r") as f:
+        #     for line in f:
+        #         self.data.append(json.loads(line))
+        # load from csv
+        with open("data/CLUTRR/clutrr_4.csv", "r") as f:
+            # read the first line to get the keys
+            reader = csv.DictReader(f)
+            for row in reader:
+                self.data.append({"question": row['story'], "answer": row['target'], "query": row['query']})
 
         # subsample to 300
         print("Number of samples:", len(self.data))
-        random.seed(0)
-        self.data = random.sample(self.data, 300)
+        # random.seed(0)
+        # self.data = random.sample(self.data, 300)
         
         # num_people = [len(d["genders"].split(",")) for d in self.data]
         # num_people = [len(d["name_map"]) for d in self.data]
@@ -1275,14 +1287,37 @@ class ClutrrDataset(torch.utils.data.Dataset):
         # print(np.histogram(num_people))
     
     def __getitem__(self, index):
-        story = self.data[index]["question"].split("\n")[0]
+        # story = self.data[index]["question"].split("\n")[0]
+        story = self.data[index]["question"]
         context = [s.strip() for s in story.split(".") if s.strip() != ""]
-        # query = self.data[index]["query"]
-        query = self.data[index]["question"].split("\n")[1]
+        query = ast.literal_eval(self.data[index]["query"])[::-1]
+        # query = self.data[index]["question"].split("\n")[1]
         # get the two names in [] from the query as a tuple
-        query = str(re.findall(r"\[(.*?)\]", query))
+        # query = str(re.findall(r"\[(.*?)\]", query))
 
-        return (story, query), self.data[index]["answer"].split("#### ")[1]
+        # return (story, query), self.data[index]["answer"].split("#### ")[1]
+        return (story, query), self.data[index]["answer"]
+
+    def __len__(self):
+        return len(self.data)
+
+
+class LeafDataset(torch.utils.data.Dataset):
+    def __init__(self, root="./"):
+        # data is stored in a directory data/leaf-11 where each subdirectory is a class
+        self.data = []
+        for i, class_dir in enumerate(os.listdir(root + "data/leaf_11")):
+            for img_file in os.listdir(root + f"data/leaf_11/{class_dir}"):
+                img_path = root + f"data/leaf_11/{class_dir}/{img_file}"
+                label = class_dir
+                self.data.append(([Image.open(img_path).convert("RGB")], label))
+        
+        # subsample to 200 samples
+        random.seed(0)
+        self.data = random.sample(self.data, 200)
+
+    def __getitem__(self, index):
+        return self.data[index]
 
     def __len__(self):
         return len(self.data)

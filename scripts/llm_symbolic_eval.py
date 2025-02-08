@@ -1,6 +1,6 @@
 import os
 import logging
-from src.dataset import MNISTSumKOrigDataset, GSM8KDataset, ChartQADataset, ClevrDataset, HWFDataset, BlocksWorldDataset, BBHDataset, FOLIODataset, LongSortDataset, ListSynthesisDataset, ClutrrDataset
+from src.dataset import MNISTSumKOrigDataset, GSM8KDataset, ChartQADataset, ClevrDataset, HWFDataset, BlocksWorldDataset, BBHDataset, FOLIODataset, LongSortDataset, ListSynthesisDataset, ClutrrDataset, LeafDataset
 from tqdm import tqdm
 import argparse
 from vllm import LLM, SamplingParams
@@ -9,7 +9,7 @@ import json
 import numpy as np
 import torch
 import ast
-from transformers import MllamaForConditionalGeneration, AutoProcessor, AutoModelForCausalLM, AutoTokenizer
+from transformers import MllamaForConditionalGeneration, AutoProcessor, AutoModelForCausalLM, AutoTokenizer, Qwen2_5_VLForConditionalGeneration
 from src.symbol_mapping import LLMNet
 from src.function import LLMNesy
 from src.utils import IOExamples, RawInput, img2base64, base642img, eval_extracted_code
@@ -26,39 +26,32 @@ class OurLLM:
     def __init__(self, model_name):
         self.model_name = model_name
         if "Llama-3.2" in model_name:
-            self.model = MllamaForConditionalGeneration.from_pretrained(model_name, torch_dtype="auto", device_map="auto", token="***REMOVED***")
+            self.model = MllamaForConditionalGeneration.from_pretrained(model_name, torch_dtype="auto", device_map="auto", token="***REMOVED***",)
             self.processor = AutoProcessor.from_pretrained(model_name, token="***REMOVED***")
         elif "Qwen" in model_name:
-            self.model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype="auto", device_map="auto", attn_implementation="flash_attention_2", token="***REMOVED***")
-            self.processor = AutoTokenizer.from_pretrained(model_name, token="***REMOVED***")
+            self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(model_name, torch_dtype="auto", device_map="auto", attn_implementation="flash_attention_2", token="***REMOVED***")
+            self.processor = AutoProcessor.from_pretrained(model_name, token="***REMOVED***")
 
     def chat(self, prompt, sampling_params, use_tqdm):
         # parse prompt content
-        prompt_content = []
         imgs = []
-        for i in range(len(prompt[0]["content"])):
-            if prompt[0]["content"][i]["type"] == "text":
-                if "Qwen" in self.model_name:
-                    prompt_content.append(prompt[0]["content"][i]["text"])
-                else:
-                    prompt_content.append(prompt[0]["content"][i])
-            elif prompt[0]["content"][i]["type"] == "image_url":
-                prompt_content.append({"type": "image"})
-                img_base64 = prompt[0]["content"][i]["image_url"]["url"].split(",")[1]
-                imgs.append(base642img(img_base64))
+        processed_prompt = []
+        for j in range(len(prompt)):
+            prompt_content = []
+            for i in range(len(prompt[j]["content"])):
+                if prompt[j]["content"][i]["type"] == "text":
+                    prompt_content.append(prompt[j]["content"][i])
+                elif prompt[j]["content"][i]["type"] == "image_url":
+                    prompt_content.append({"type": "image"})
+                    img_base64 = prompt[j]["content"][i]["image_url"]["url"].split(",")[1]
+                    imgs.append(base642img(img_base64))
+            processed_prompt.append({"role": prompt[j]["role"], "content": prompt_content})
 
-        if "Qwen" in self.model_name:
-            prompt_content = "".join(prompt_content)
+        # prompt = [{"role": "user", "content": prompt_content}]
+        print("prompt:", processed_prompt)
 
-        prompt = [{"role": "user", "content": prompt_content}]
-        # print("prompt:", prompt)
-
-        if "Llama-3.2" in self.model_name:
-            input_text = self.processor.apply_chat_template(prompt, add_generation_prompt=True)
-            inputs = self.processor(imgs if len(imgs) > 0 else None, input_text, add_special_tokens=False, return_tensors="pt").to("cuda:0")
-        elif "Qwen" in self.model_name:
-            input_text = self.processor.apply_chat_template(prompt, tokenize=False, add_generation_prompt=True)
-            inputs = self.processor(input_text, return_tensors="pt", add_special_tokens=False).to("cuda:0")
+        input_text = self.processor.apply_chat_template(processed_prompt, add_generation_prompt=True)
+        inputs = self.processor(imgs if len(imgs) > 0 else None, input_text, add_special_tokens=False, return_tensors="pt").to("cuda:0")
 
         print(self.processor.decode(inputs["input_ids"][0]))
         start = time.time()
@@ -115,7 +108,7 @@ def get_predictions(model: LLM, data, prompt):
     return preds, gt, logs
 
 
-def get_raw_predictions(model: LLM, data, log=False, equiv = None):
+def get_raw_predictions(model: LLM, data, log=False, equiv = None, instruction=None):
     if equiv is None:
         equiv = lambda x, y: str(x) == str(y)
     sampling_params = SamplingParams(temperature=0.0, max_tokens=10000, top_p=1.0)
@@ -127,7 +120,12 @@ def get_raw_predictions(model: LLM, data, log=False, equiv = None):
         label = data[i][1]
         gt.append(label)
 
-        prompt = [{"type": "text", "text": "Analyze the provided input and think through the answer step-by-step. Once the final answer is found, write it at the end after \"FINAL ANSWER:\". The input is: "}]
+        if instruction is not None:
+            prompt = [{"type": "text", "text": f"{instruction} Once the final answer is found, write it at the end after \"FINAL ANSWER:\". The input is: "}]
+        else:
+            prompt = [{"type": "text", "text": "Analyze the provided input and think through the answer step-by-step. Once the final answer is found, write it at the end after \"FINAL ANSWER:\". The input is: "}]
+
+        # Add the input to the prompt
         if input[1] is not None and input[0] is None:
             prompt.append(
                 {"type": "text", "text": input[1]}
@@ -216,7 +214,7 @@ def get_task_predictions(task: LLMNesy, data, log=False, equiv=None):
         try:
             print(data[i])
             # data[i] = ((['[Bonita] asked her daughter, [Maryann], if she would like to go to a movie with her on Saturday night', '[Maryann] went to the bakery with her uncle [John] to pick up some bread for lunch'], "('Bonita', 'John')"), 'grandmother') 
-            if type(data[i][0][0]) == str or (type(data[i][0][0]) == list and type(data[i][0][0][0]) == str):
+            if type(data[i][0]) == str or (type(data[i][0]) == list and type(data[i][0][0]) == str) or (type(data[i][0]) == list and type(data[i][0][0]) == list and type(data[i][0][0][0]) == str):
                 out, symbols = task.apply(
                     [RawInput(image_input=None, text_input=d) for d in data[i][0]], return_symbols=True, print_log=log
                 )
@@ -245,10 +243,20 @@ def get_task_predictions(task: LLMNesy, data, log=False, equiv=None):
 
 
 def sum2_extract(data, model):
+    examples = None
+    if args.few_shot:
+        examples = IOExamples(
+            description=None,
+            inputs=[RawInput(image_input=data[101][0][0], text_input=None), RawInput(image_input=data[101][0][1], text_input=None), RawInput(image_input=data[101][0][2], text_input=None)],
+            outputs=[[7], [6], [1]],
+        )
+
     mnist_extract = LLMNet(
         model,
         "an image of a handwritten digit",
-        "the value of the digit in the image as an integer from 0 to 9")
+        "the digit as an integer from 0 to 9",
+        examples
+    )
 
     def parse(*imgs):
         digits = []
@@ -399,25 +407,31 @@ def hwf_settings(data):
 
 
 def hwf_extract(data, model):
+    digit_examples = None
+    if args.few_shot:
+        digit_examples = IOExamples(
+            description=None,
+            inputs=[RawInput(image_input=data[101][0][0], text_input=None), RawInput(image_input=data[101][0][2], text_input=None), RawInput(image_input=data[101][0][4], text_input=None), RawInput(image_input=data[102][0][0], text_input=None), RawInput(image_input=data[102][0][2], text_input=None), RawInput(image_input=data[102][0][4], text_input=None)],
+            outputs=[[2], [9], [4], [6], [1], [1]],
+        )
     extract_digit = LLMNet(
         model,
-        "an image of a handwritten digit from 0 to 9",
-        "the value of the digit in the image as an integer from 0 to 9",
-        # IOExamples(
-        #     description=None,
-        #     inputs=[RawInput(image_input=data[101][0][0], text_input=None)],
-        #     outputs=[[2]],
-        # )
+        "a handwritten number from 0 to 9",
+        "the value of the number as an integer from 0 to 9",
+        digit_examples
     )
-    extract_operator = LLMNet(
-        model,
-        "a handwritten arithmetic operator",
-        "the operator in the image as a string in the set {'+', '-', '*', '/'}",
-        IOExamples(
+    operator_examples = None
+    if args.few_shot:
+        operator_examples = IOExamples(
             description=None,
             inputs=[RawInput(image_input=data[101][0][1], text_input=None), RawInput(image_input=data[101][0][3], text_input=None), RawInput(image_input=data[102][0][3], text_input=None), RawInput(image_input=data[103][0][1], text_input=None)],
             outputs=[['/'], ['*'], ['-'], ['+']],
         )
+    extract_operator = LLMNet(
+        model,
+        "a handwritten arithmetic operator",
+        "the operator as a string in the set {'+', '-', '*', '/'} (note that the division operator can look like a line with a dot above and below it and multiplication can look like an 'x')",
+        operator_examples
     )
 
     def parse(*imgs):
@@ -436,91 +450,169 @@ def hwf_extract(data, model):
     return parse, function
 
 
-def clutrr_extract(data, model):
-    # extract_relation = LLMNet(
-    #     model,
-    #     "a description of a relationship between two people and then a question about the two people",
-    #     "the described relationship which answers the question. The relationship is one of the following: {'brother', 'sister', 'father', 'mother', 'son', 'daughter', 'grandfather', 'grandmother', 'uncle', 'aunt', 'nephew', 'niece', 'husband', 'wife', 'brother-in-law', 'sister-in-law', 'son-in-law', 'daughter-in-law', 'father-in-law', 'mother-in-law', 'grandson', 'granddaughter'}. For example, for the input 'John took his sister Mary to the store. John is Mary\'s what?' the output should be 'brother.' Output just the relationship as a word.",
-    # )
-    extract_relations = LLMNet(
-        model,
-        "a story about how people are related to each other",
-        "a string representing a Python dictionary mapping pairs of people to their relationship where the relationship is one of the following: {'brother', 'sister', 'father', 'mother', 'son', 'daughter', 'grandfather', 'grandmother', 'uncle', 'aunt', 'nephew', 'niece', 'husband', 'wife', 'brother-in-law', 'sister-in-law', 'son-in-law', 'daughter-in-law', 'father-in-law', 'mother-in-law', 'grandson', 'granddaughter'}",
-        IOExamples(
+def leaf_extract(data, model):
+    margin_examples = None
+    shape_examples = None
+    texture_examples = None
+    if args.few_shot:
+        margin_examples = IOExamples(
             description=None,
-            inputs=[RawInput(image_input=None, text_input="Bob is the son of John.")],
-            outputs=[['{("Bob", "John"): "son", ("John", "Bob"): "father"}']],
+            inputs=[RawInput(image_input=data[101][0][0], text_input=None), RawInput(image_input=data[106][0][0], text_input=None)],
+            outputs=[['undulate'], ['entire']],
         )
+        shape_examples = IOExamples(
+            description=None,
+            inputs=[RawInput(image_input=data[101][0][0], text_input=None)],
+            outputs=[['elliptical']],
+        )
+        texture_examples = IOExamples(
+            description=None,
+            inputs=[RawInput(image_input=data[106][0][0], text_input=None)],
+            outputs=[['leathery']],
+        )
+
+    margin_net = LLMNet(
+        model,
+        "an image of a leaf",
+        "the classification of the leaf's margin as one of the following: {'entire', 'indented', 'lobed', 'serrate', 'serrulate', 'undulate'}",
+        margin_examples
+    )
+    shape_net = LLMNet(
+        model,
+        "an image of a leaf",
+        "the classification of the leaf's shape as one of the following: {'elliptical', 'lanceolate', 'oblong', 'obovate', 'ovate'}",
+        shape_examples
+    )
+    texture_net = LLMNet(
+        model,
+        "an image of a leaf",
+        "the classification of the leaf's texture as one of the following: {'glossy', 'leathery', 'smooth', 'rough'}",
+        texture_examples
     )
 
-    def parse(context: RawInput, query: RawInput):
-        out_dict = extract_relations.forward(context)
-        print("out_dict:", out_dict)
-        out_dict = ast.literal_eval(out_dict)
-        return out_dict, tuple(query.text_input.replace("[", "").replace("]", "").replace("'", "").split(", "))
+    def parse(img):
+        margin = margin_net.forward(img)
+        shape = shape_net.forward(img)
+        texture = texture_net.forward(img)
+        return [margin, shape, texture]
+    
+    def function(margin, shape, texture):
+        if margin == 'serrate': return 'Ocimum basilicum'
+        elif margin == 'indented': return 'Jatropha curcas'
+        elif margin == 'lobed': return 'Platanus orientalis'
+        elif margin == 'serrulate': return "Citrus limon"
+        elif margin == 'entire':
+          if shape == 'ovate': return 'Pongamia Pinnata'
+          elif shape == 'lanceolate': return 'Mangifera indica'
+          elif shape == 'oblong': return 'Syzygium cumini'
+          elif shape == 'obovate': return "Psidium guajava"
+          else:
+            if texture == 'leathery': return "Alstonia Scholaris"
+            elif texture == 'rough': return "Terminalia Arjuna"
+            elif texture == 'glossy': return "Citrus limon"
+            else: return "Punica granatum"
+        else:
+          if shape == 'elliptical': return 'Terminalia Arjuna'
+          elif shape == 'lanceolate': return "Mangifera indica"
+          else: return 'Syzygium cumini'
+
+    return parse, function
+
+
+def clutrr_extract(data, model):
+    examples = None
+    if args.few_shot:
+        examples = IOExamples(
+            description=None,
+            inputs=[RawInput(image_input=None, text_input="Bob is the son of John. Bob is John's what?"), RawInput(image_input=None, text_input="Bob is the son of John. John is Bob's what?")],
+            outputs=[['son'], ['father']],
+        )
+    extract_relation = LLMNet(
+        model,
+        "a description of a relationship between two people and a query about the two people's relationship",
+        "the described relationship which answers the question. The output relationship is one of the following: {'brother', 'sister', 'father', 'mother', 'son', 'daughter', 'grandfather', 'grandmother', 'uncle', 'aunt', 'nephew', 'niece', 'husband', 'wife', 'brother-in-law', 'sister-in-law', 'son-in-law', 'daughter-in-law', 'father-in-law', 'mother-in-law', 'grandson', 'granddaughter'}. For example, for the input 'John took his sister Mary to the store. John is Mary\'s what?' the output should be 'brother.' Output just the relationship as a word.",
+        examples
+    )
+    # extract_relations = LLMNet(
+    #     model,
+    #     "a story about how people are related to each other",
+    #     "a string representing a Python dictionary mapping pairs of people to their relationship where the relationship is one of the following: {'brother', 'sister', 'father', 'mother', 'son', 'daughter', 'grandfather', 'grandmother', 'uncle', 'aunt', 'nephew', 'niece', 'husband', 'wife', 'brother-in-law', 'sister-in-law', 'son-in-law', 'daughter-in-law', 'father-in-law', 'mother-in-law', 'grandson', 'granddaughter'}",
+    #     IOExamples(
+    #         description=None,
+    #         inputs=[RawInput(image_input=None, text_input="Bob is the son of John.")],
+    #         outputs=[['{("Bob", "John"): "son", ("John", "Bob"): "father"}']],
+    #     )
+    # )
 
     # def parse(context: RawInput, query: RawInput):
-    #     # Preprocess sentences
-    #     relation_sentences = []
-    #     relation_name_pairs = []
-    #     curr_relation_sentences = []
-    #     curr_name_pairs = []
-    #     skip_next = False
-    #     skip_until = 0
-    #     for (j, sentence) in enumerate(context.text_input):
-    #         # It is possible to skip a sentence because the previous one includes the current one.
-    #         if skip_next:
-    #             if j >= skip_until:
-    #                 skip_next = False
-    #             continue
+    #     out_dict = extract_relations.forward(context)
+    #     print("out_dict:", out_dict)
+    #     out_dict = ast.literal_eval(out_dict)
+    #     return out_dict, tuple(query.text_input.replace("[", "").replace("]", "").replace("'", "").split(", "))
 
-    #         # Get all the names of the current sentence
-    #         names = re.findall(r"\[(\w+)\]", sentence)
+    def parse(context: RawInput, query: RawInput):
+        # Preprocess sentences
+        relation_sentences = []
+        relation_name_pairs = []
+        curr_relation_sentences = []
+        curr_name_pairs = []
+        skip_next = False
+        skip_until = 0
+        context = [s.strip() for s in context.text_input.split(".") if s.strip() != ""]
+        for (j, sentence) in enumerate(context):
+            # It is possible to skip a sentence because the previous one includes the current one.
+            if skip_next:
+                if j >= skip_until:
+                    skip_next = False
+                continue
 
-    #         # Check if we need to include the next sentence(s) as well
-    #         num_sentences_limit = 4
-    #         num_sentences = 1
-    #         union_sentence = f"{sentence}"
-    #         for k in range(j + 1, len(context.text_input)):
-    #             next_sentence = context.text_input[k]
-    #             next_sentence_names = re.findall(r"\[(\w+)\]", next_sentence)
-    #             if (len(names) == 1 or len(next_sentence_names) == 1) and num_sentences < num_sentences_limit:
-    #                 if len(next_sentence_names) > 0:
-    #                     num_sentences += 1
-    #                     union_sentence += f". {next_sentence}"
-    #                     names += next_sentence_names
-    #                 skip_next = True
-    #                 if len(next_sentence_names) == 1:
-    #                     skip_until = k - 1
-    #                 else:
-    #                     skip_until = k
-    #             else:
-    #                 break
+            # Get all the names of the current sentence
+            names = re.findall(r"\[(\w+)\]", sentence)
 
-    #         # Deduplicate the names
-    #         names = list(dict.fromkeys(names))
+            # Check if we need to include the next sentence(s) as well
+            num_sentences_limit = 4
+            num_sentences = 1
+            union_sentence = f"{sentence}"
+            for k in range(j + 1, len(context)):
+                next_sentence = context[k]
+                next_sentence_names = re.findall(r"\[(\w+)\]", next_sentence)
+                if (len(names) == 1 or len(next_sentence_names) == 1) and num_sentences < num_sentences_limit:
+                    if len(next_sentence_names) > 0:
+                        num_sentences += 1
+                        union_sentence += f". {next_sentence}"
+                        names += next_sentence_names
+                    skip_next = True
+                    if len(next_sentence_names) == 1:
+                        skip_until = k - 1
+                    else:
+                        skip_until = k
+                else:
+                    break
 
-    #         # Clean up the sentence and add it to the batch
-    #         clean_sentence = union_sentence.replace("[", "").replace("]", "")
-    #         curr_relation_sentences += [f"{clean_sentence}. {names[k]} is {names[l]}'s what?" for k in range(len(names)) for l in range(len(names)) if k != l]
-    #         curr_name_pairs += [(k, l) for k in names for l in names if k != l]
+            # Deduplicate the names
+            names = list(dict.fromkeys(names))
 
-    #     # Construct the current datatpoint
-    #     relation_sentences += curr_relation_sentences
-    #     relation_name_pairs += curr_name_pairs
+            # Clean up the sentence and add it to the batch
+            clean_sentence = union_sentence.replace("[", "").replace("]", "")
+            curr_relation_sentences += [f"{clean_sentence}. {names[k]} is {names[l]}'s what?" for k in range(len(names)) for l in range(len(names)) if k != l]
+            curr_name_pairs += [(k, l) for k in names for l in names if k != l]
 
-    #     facts = []
-    #     for i in range(len(relation_sentences)):
-    #         rel = extract_relation.forward(RawInput(image_input=None, text_input=relation_sentences[i]))
-    #         rel = re.sub(r"[^a-zA-Z\-]", "", rel)
-    #         facts.append((relation_name_pairs[i], rel))
+        # Construct the current datatpoint
+        relation_sentences += curr_relation_sentences
+        relation_name_pairs += curr_name_pairs
 
-    #     return facts, tuple(query.text_input.replace("[", "").replace("]", "").replace("'", "").split(", "))
+        facts = []
+        for i in range(len(relation_sentences)):
+            rel = extract_relation.forward(RawInput(image_input=None, text_input=relation_sentences[i]))
+            rel = re.sub(r"[^a-zA-Z\-]", "", rel)
+            facts.append((relation_name_pairs[i], rel))
+
+        return facts, query.text_input #tuple(query.text_input.replace("[", "").replace("]", "").replace("'", "").split(", "))
 
     def function(facts, query):
         rules = {('sister-in-law', 'brother'): 'brother-in-law', ('sister-in-law', 'sister'): 'sister-in-law', ('brother-in-law', 'brother'): 'brother-in-law', ('brother-in-law', 'sister'): 'sister-in-law', ('daughter-in-law', 'daughter'): 'granddaughter', ('daughter-in-law', 'son'): 'grandson', ('son-in-law', 'daughter'): 'granddaughter', ('son-in-law', 'son'): 'grandson', ('nephew', 'sister'): 'niece', ('nephew', 'brother'): 'nephew', ('niece', 'sister'): 'niece', ('niece', 'brother'): 'nephew', ('grandson', 'aunt'): 'daughter', ('grandson', 'uncle'): 'son', ('granddaughter', 'aunt'): 'daughter', ('granddaughter', 'uncle'): 'son', ('brother-in-law', 'son'): 'nephew', ('sister-in-law', 'son'): 'nephew', ('brother-in-law', 'daughter'): 'niece', ('sister-in-law', 'daughter'): 'niece', ('sister-in-law', 'father'): 'father-in-law', ('grandson', 'brother'): 'grandson', ('grandson', 'father'): 'son', ('grandson', 'sister'): 'granddaughter', ('niece', 'grandfather'): 'father', ('grandmother', 'husband'): 'grandfather', ('wife', 'mother'): 'mother-in-law', ('wife', 'brother'): 'brother-in-law', ('wife', 'sister'): 'sister-in-law', ('wife', 'mother-in-law'): 'mother', ('wife', 'daughter-in-law'): 'daughter-in-law', ('wife', 'father-in-law'): 'father', ('wife', 'son-in-law'): 'son-in-law', ('wife', 'grandson'): 'grandson', ('wife', 'granddaughter'): 'granddaughter', ('wife', 'father'): 'father-in-law', ('wife', 'son'): 'son', ('wife', 'daughter'): 'daughter', ('grandfather', 'wife'): 'grandmother', ('grandfather', 'son'): 'father', ('grandfather', 'daughter'): 'mother', ('uncle', 'mother'): 'grandmother', ('uncle', 'brother'): 'uncle', ('uncle', 'father'): 'grandfather', ('uncle', 'sister'): 'aunt', ('mother', 'mother-in-law'): 'grandmother', ('mother', 'daughter-in-law'): 'wife', ('mother', 'father-in-law'): 'grandfather', ('mother', 'son-in-law'): 'husband', ('mother', 'grandson'): 'son', ('mother', 'mother'): 'grandmother', ('mother', 'brother'): 'uncle', ('mother', 'granddaughter'): 'daughter', ('mother', 'husband'): 'father', ('mother', 'father'): 'grandfather', ('mother', 'son'): 'brother', ('mother', 'sister'): 'aunt', ('mother', 'daughter'): 'sister', ('nephew', 'grandmother'): 'mother', ('nephew', 'grandfather'): 'father', ('nephew', 'uncle'): 'brother', ('nephew', 'mother'): 'sister', ('nephew', 'father'): 'brother', ('nephew', 'aunt'): 'sister', ('brother', 'niece'): 'niece', ('brother', 'grandmother'): 'grandmother', ('brother', 'grandfather'): 'grandfather', ('brother', 'uncle'): 'uncle', ('brother', 'mother'): 'mother', ('brother', 'nephew'): 'nephew', ('brother', 'brother'): 'brother', ('brother', 'father'): 'father', ('brother', 'aunt'): 'aunt', ('brother', 'son'): 'nephew', ('brother', 'sister'): 'sister', ('brother', 'daughter'): 'niece', ('granddaughter', 'grandmother'): 'wife', ('granddaughter', 'grandfather'): 'husband', ('granddaughter', 'mother'): 'daughter', ('granddaughter', 'brother'): 'grandson', ('granddaughter', 'father'): 'son', ('granddaughter', 'sister'): 'granddaughter', ('husband', 'grandson'): 'grandson', ('husband', 'mother'): 'mother-in-law', ('husband', 'brother'): 'brother-in-law', ('husband', 'granddaughter'): 'granddaughter', ('husband', 'father'): 'father-in-law', ('husband', 'son'): 'son', ('husband', 'sister'): 'sister-in-law', ('husband', 'daughter'): 'daughter', ('father', 'wife'): 'mother', ('father', 'mother'): 'grandmother', ('father', 'brother'): 'uncle', ('father', 'granddaughter'): 'daughter', ('father', 'father'): 'grandfather', ('father', 'son'): 'brother', ('father', 'sister'): 'aunt', ('father', 'daughter'): 'sister', ('aunt', 'mother'): 'grandmother', ('aunt', 'brother'): 'uncle', ('aunt', 'father'): 'grandfather', ('aunt', 'sister'): 'aunt', ('son', 'grandmother'): 'mother', ('son', 'wife'): 'daughter-in-law', ('son', 'grandfather'): 'father', ('son', 'uncle'): 'brother', ('son', 'mother'): 'wife', ('son', 'brother'): 'son', ('son', 'father'): 'husband', ('son', 'aunt'): 'sister', ('son', 'son'): 'grandson', ('son', 'sister'): 'daughter', ('son', 'daughter'): 'granddaughter', ('sister', 'niece'): 'niece', ('sister', 'grandmother'): 'grandmother', ('sister', 'grandfather'): 'grandfather', ('sister', 'uncle'): 'uncle', ('sister', 'mother'): 'mother', ('sister', 'nephew'): 'nephew', ('sister', 'brother'): 'brother', ('sister', 'husband'): 'brother-in-law', ('sister', 'father'): 'father', ('sister', 'aunt'): 'aunt', ('sister', 'son'): 'nephew', ('sister', 'sister'): 'sister', ('sister', 'daughter'): 'niece', ('daughter', 'grandmother'): 'mother', ('daughter', 'grandfather'): 'father', ('daughter', 'uncle'): 'brother', ('daughter', 'mother'): 'wife', ('daughter', 'brother'): 'son', ('daughter', 'husband'): 'son-in-law', ('daughter', 'father'): 'husband', ('daughter', 'aunt'): 'sister', ('daughter', 'son'): 'grandson', ('daughter', 'sister'): 'daughter', ('daughter', 'daughter'): 'granddaughter', ('niece', 'father'): 'brother', ('niece', 'mother'): 'sister', ('sister', 'wife'): 'sister-in-law', ('brother', 'husband'): 'brother-in-law', ('brother', 'wife'): 'sister-in-law', ('sister-in-law', 'mother'): 'mother-in-law', ('brother-in-law', 'father'): 'father-in-law', ('brother-in-law', 'mother'): 'mother-in-law', ('grandmother', 'daughter'): 'mother', ('grandmother', 'son'): 'father', ('mother-in-law', 'daughter'): 'wife', ('father-in-law', 'daughter'): 'wife', ('sister-in-law', 'husband'): 'brother-in-law', ('brother-in-law', 'wife'): 'sister-in-law', ('mother-in-law', 'son'): 'brother-in-law', ('husband', 'wife'): 'self', ('wife', 'husband'): 'self', ('grandson', 'mother'): 'daughter', ('cousin', 'grandmother'): 'grandmother', ('cousin', 'grandfather'): 'grandfather', ('aunt', 'son'): 'cousin', ('aunt', 'daughter'): 'cousin', ('uncle', 'son'): 'cousin', ('uncle', 'daughter'): 'cousin', ('niece', 'grandmother'): 'mother', ('niece', 'uncle'): 'brother', ('niece', 'aunt'): 'sister', ('cousin', 'uncle'): 'uncle', ('cousin', 'aunt'): 'aunt', ('grandson', 'grandfather'): 'husband', ('grandson', 'grandmother'): 'wife', ('cousin', 'mother'): 'aunt', ('cousin', 'father'): 'uncle', ('cousin', 'sister'): 'sister', ('cousin', 'brother'): 'brother', ('father-in-law', 'son'): 'husband', ('mother-in-law', 'husband'): 'father-in-law', ('father-in-law', 'wife'): 'mother-in-law', ('aunt', 'husband'): 'uncle', ('uncle', 'wife'): 'aunt'}
 
-        # facts = {(pair[0], pair[1]): rel for pair, rel in facts}
+        facts = {(pair[0], pair[1]): rel for pair, rel in facts}
         last_facts = {}
         while query not in facts:
             added_facts = {}
@@ -533,7 +625,7 @@ def clutrr_extract(data, model):
             if last_facts == facts:
                 break
             last_facts = facts
-        print(facts)
+        print("final facts:", facts)
 
         if query in facts:
             return facts[query]
@@ -1291,6 +1383,8 @@ def create_symbol_extractor(args, model):
         data = HWFDataset(root="data", split="train", length=5)
     elif args.dataset == "clutrr":
         data = ClutrrDataset()
+    elif args.dataset == "leaf":
+        data = LeafDataset()
     elif args.dataset == "clevr":
         data = ClevrDataset(max_samples=500)
     elif args.dataset == "chartqa":
@@ -1319,6 +1413,7 @@ def create_symbol_extractor(args, model):
         "hwf": hwf_extract,
         "clutrr": clutrr_extract,
         "clevr": clevr_settings,
+        "leaf": leaf_extract,
         "chartqa": chartqa_settings,
         "gsm8k": gsm8k_settings,
         "blocksworld": blocksworld_settings,
@@ -1523,7 +1618,7 @@ def main(args):
     if not os.path.exists(f"logs/{('debug/' if args.debug else '') + model_name}/{args.dataset}/"):
         os.makedirs(f"logs/{('debug/' if args.debug else '') + model_name}/{args.dataset}/")
     with open(
-        f"logs/{('debug/' if args.debug else '') + model_name}/{args.dataset}/llm_symbolic.txt",
+        f"logs/{('debug/' if args.debug else '') + model_name}/{args.dataset}/llm_symbolic_{'fs' if args.few_shot else 'zs'}.txt",
         "w",
     ) as f:
         for log in logs:
@@ -1532,7 +1627,7 @@ def main(args):
     # append to results file
     with open(f"logs/{('debug/' if args.debug else '') + model_name}/{args.dataset}/results.txt", "a") as f:
         f.write(
-            f"{('debug_' if args.debug else '') + model_name},{args.dataset},{acc}\n"
+            f"{('debug_' if args.debug else '') + model_name},{args.few_shot},{args.dataset},{acc}\n"
         )
 
 
@@ -1551,6 +1646,7 @@ if __name__ == "__main__":
     args.add_argument("--use_hf", action="store_true")
     args.add_argument("--debug", action="store_true")
     args.add_argument("--eval", action="store_true")
+    args.add_argument("--few_shot", action="store_true")
     args = args.parse_args()
 
     logger.info("Starting")
