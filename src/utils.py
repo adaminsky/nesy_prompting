@@ -39,6 +39,18 @@ def img2base64(img):
     #         new_width = int((500 / img.height) * img.width)
     #     img = img.resize((new_width, new_height))
 
+    # if width or height < 28, resize it keeping aspect ratio
+    if img.width < 28 or img.height < 28:
+        # make smallest dimension 28
+        new_width = 28
+        new_height = 28
+        if img.width < img.height:
+            new_height = int((28 / img.width) * img.height)
+        else:
+            new_width = int((28 / img.height) * img.width)
+        img = img.resize((new_width, new_height))
+
+
     img.save(buffer, format="JPEG")
     return base64.b64encode(buffer.getvalue()).decode()
 

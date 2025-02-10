@@ -1,6 +1,6 @@
 import os
 import logging
-from src.dataset import MNISTSumKOrigDataset, GSM8KDataset, ChartQADataset, ClevrDataset, HWFDataset, BlocksWorldDataset, BBHDataset, FOLIODataset, LongSortDataset, ListSynthesisDataset, ClutrrDataset, LeafDataset
+from src.dataset import MNISTSumKOrigDataset, GSM8KDataset, ChartQADataset, ClevrDataset, HWFDataset, BlocksWorldDataset, BBHDataset, FOLIODataset, LongSortDataset, ListSynthesisDataset, ClutrrDataset, LeafDataset, PathFinder128Dataset
 from tqdm import tqdm
 import argparse
 from vllm import LLM, SamplingParams
@@ -17,6 +17,8 @@ from src.pddl import eval_solution_files, find_solution
 from src.function_evaluation import python_eval
 from src.program_gen import ProgramSynthesisSolver, DSLOp
 import time
+import itertools
+import PIL
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -450,6 +452,117 @@ def hwf_extract(data, model):
     return parse, function
 
 
+def pathfinder_extract(data, model):
+    def create_adjacency(img: PIL.Image):
+        num_block_x = 6
+        num_block_y = 6
+        wx = 128 // num_block_x
+        wy = 128 // num_block_y
+        def block_coord_to_block_id(x, y):
+            return y + (x * num_block_y)
+
+        adjacency_imgs = []
+        adjacency_ids = []
+        img = torch.tensor(np.array(img))
+        for i, j in itertools.product(range(num_block_x), range(num_block_y)):
+            for dx, dy in [(-1, 0), (0, -1), (0, 1), (1, 0)]:
+                x, y = i + dx, j + dy
+                if x >= 0 and x < num_block_x and y >= 0 and y < num_block_y:
+                    source_id = (i * wx, j * wy, i * wx + wx, j * wy + wy)
+                    target_id = (x * wx, y * wy, x * wx + wx, y * wy + wy)
+                    img_black = torch.zeros_like(img)
+                    img_black[source_id[0]:source_id[2], source_id[1]:source_id[3]] = img[source_id[0]:source_id[2], source_id[1]:source_id[3]]
+                    img_black[target_id[0]:target_id[2], target_id[1]:target_id[3]] = img[target_id[0]:target_id[2], target_id[1]:target_id[3]]
+                    img_black = img_black[min(source_id[0], target_id[0]):max(source_id[2], target_id[2]), min(source_id[1], target_id[1]):max(source_id[3], target_id[3])]
+                    img_black = PIL.Image.fromarray(img_black.numpy())
+                    # crop source and target blocks and then concatenate them
+                    # img_black = PIL.Image.new('RGB', (2 * wx, wy), (255, 255, 255))
+                    # img_black.paste(img.crop(source_id), (0, 0))
+                    # img_black.paste(img.crop(target_id), (wx, 0))
+
+                    adjacency_imgs.append(img_black)
+
+                    source_id = block_coord_to_block_id(i, j)
+                    target_id = block_coord_to_block_id(x, y)
+                    adjacency_ids.append((source_id, target_id))
+        return adjacency_imgs, adjacency_ids
+
+    def create_blocks(img: PIL.Image):
+        num_block_x = 6
+        num_block_y = 6
+        wx = 128 // num_block_x
+        wy = 128 // num_block_y
+        blocks = []
+        for i, j in itertools.product(range(num_block_x), range(num_block_y)):
+            # blocks.append(img[i * wx:(i + 1) * wx, j * wy:(j + 1) * wy])
+            blocks.append(img.crop((i * wx, j * wy, (i + 1) * wx, (j + 1) * wy)))
+        return blocks
+
+    edge_model = LLMNet(
+        model,
+        "an image which may contain dashed lines",
+        "1 if there is a complete dashed line going across the long side of the image, 0 otherwise",
+        IOExamples(
+            description=None,
+            inputs=[RawInput(image_input=create_adjacency(data[101][0][0])[0][13], text_input=None), RawInput(image_input=create_adjacency(data[101][0][0])[0][18], text_input=None), RawInput(image_input=create_adjacency(data[101][0][0])[0][1], text_input=None), RawInput(image_input=create_adjacency(data[101][0][0])[0][9], text_input=None)],
+            outputs=[['0'], ['1'], ['1'], ['0']],
+        )
+    )
+
+    node_model = LLMNet(
+        model,
+        "an image",
+        "1 if there is a circle in the image, 0 otherwise",
+        IOExamples(
+            description=None,
+            inputs=[RawInput(image_input=create_blocks(data[101][0][0])[14], text_input=None), RawInput(image_input=create_blocks(data[101][0][0])[13], text_input=None), RawInput(image_input=create_blocks(data[101][0][0])[4], text_input=None), RawInput(image_input=create_blocks(data[101][0][0])[10], text_input=None)],
+            outputs=[['1'], ['0'], ['1'], ['0']],
+        )
+    )
+
+    def parse(img: RawInput):
+        blocks = create_blocks(img.image_input)
+        adjacency_imgs, adjacency_ids = create_adjacency(img.image_input)
+        adjacency_graph = []
+        for i, adj_img in enumerate(adjacency_imgs):
+            edge = edge_model.forward(RawInput(image_input=adj_img, text_input=None))
+            edge = re.sub(r"[^01]", "", edge)
+            if edge == '1':
+                adjacency_graph.append(adjacency_ids[i]) 
+        nodes = [re.sub(r"[^01]", "", node_model.forward(RawInput(image_input=block, text_input=None))) for block in blocks]
+
+        return adjacency_graph, nodes
+
+    def function(adjacency_graph, nodes):
+        print("adjacency_graph:", adjacency_graph)
+        print("nodes:", nodes)
+
+        # check if there is a path from one node to the other node
+        nodes = np.array([int(node) for node in nodes])
+        if np.sum(nodes) != 2:
+            return 0
+
+        node_ids = np.where(nodes == 1)[0]
+        print("node_ids:", node_ids)
+        start_node = node_ids[0]
+        end_node = node_ids[1]
+
+        # check if there is a path from start_node to end_node
+        visited = set()
+        stack = [start_node]
+        while stack:
+            node = stack.pop()
+            if node == end_node:
+                return 1
+            if node in visited:
+                continue
+            visited.add(node)
+            stack.extend([adj[1] for adj in adjacency_graph if adj[0] == node])
+        return 0
+
+    return parse, function
+
+
 def leaf_extract(data, model):
     margin_examples = None
     shape_examples = None
@@ -457,36 +570,36 @@ def leaf_extract(data, model):
     if args.few_shot:
         margin_examples = IOExamples(
             description=None,
-            inputs=[RawInput(image_input=data[101][0][0], text_input=None), RawInput(image_input=data[106][0][0], text_input=None)],
-            outputs=[['undulate'], ['entire']],
+            inputs=[RawInput(image_input=data[101][0][0], text_input=None), RawInput(image_input=data[103][0][0], text_input=None), RawInput(image_input=data[36][0][0], text_input=None)],
+            outputs=[['undulate'], ['entire'], ["indented"]],
         )
         shape_examples = IOExamples(
             description=None,
-            inputs=[RawInput(image_input=data[101][0][0], text_input=None)],
-            outputs=[['elliptical']],
+            inputs=[RawInput(image_input=data[101][0][0], text_input=None), RawInput(image_input=data[103][0][0], text_input=None), RawInput(image_input=data[15][0][0], text_input=None)],
+            outputs=[['elliptical'], ['ovate'], ['lanceolate']],
         )
         texture_examples = IOExamples(
             description=None,
-            inputs=[RawInput(image_input=data[106][0][0], text_input=None)],
-            outputs=[['leathery']],
+            inputs=[RawInput(image_input=data[106][0][0], text_input=None), RawInput(image_input=data[110][0][0], text_input=None), RawInput(image_input=data[137][0][0], text_input=None)],
+            outputs=[['leathery'], ['smooth'], ['glossy']],
         )
 
     margin_net = LLMNet(
         model,
         "an image of a leaf",
-        "the classification of the leaf's margin as one of the following: {'entire', 'indented', 'lobed', 'serrate', 'serrulate', 'undulate'}",
+        "the classification of the leaf's margin as one of the following: {'entire', 'indented', 'lobed', 'serrate', 'serrulate', 'undulate'}.",
         margin_examples
     )
     shape_net = LLMNet(
         model,
         "an image of a leaf",
-        "the classification of the leaf's shape as one of the following: {'elliptical', 'lanceolate', 'oblong', 'obovate', 'ovate'}",
+        "the classification of the leaf's shape as one of the following: {'elliptical', 'lanceolate', 'oblong', 'obovate', 'ovate'}.",
         shape_examples
     )
     texture_net = LLMNet(
         model,
         "an image of a leaf",
-        "the classification of the leaf's texture as one of the following: {'glossy', 'leathery', 'smooth', 'rough'}",
+        "the classification of the leaf's texture as one of the following: {'glossy', 'leathery', 'smooth', 'rough'}.",
         texture_examples
     )
 
@@ -494,6 +607,11 @@ def leaf_extract(data, model):
         margin = margin_net.forward(img)
         shape = shape_net.forward(img)
         texture = texture_net.forward(img)
+
+        # Clean up the output
+        margin = re.sub(r"[^a-zA-Z]", "", margin)
+        shape = re.sub(r"[^a-zA-Z]", "", shape)
+        texture = re.sub(r"[^a-zA-Z]", "", texture)
         return [margin, shape, texture]
     
     def function(margin, shape, texture):
@@ -1385,6 +1503,8 @@ def create_symbol_extractor(args, model):
         data = ClutrrDataset()
     elif args.dataset == "leaf":
         data = LeafDataset()
+    elif args.dataset == "pathfinder":
+        data = PathFinder128Dataset("./data/pathfinder/", "128", difficulty="easy")
     elif args.dataset == "clevr":
         data = ClevrDataset(max_samples=500)
     elif args.dataset == "chartqa":
@@ -1414,6 +1534,7 @@ def create_symbol_extractor(args, model):
         "clutrr": clutrr_extract,
         "clevr": clevr_settings,
         "leaf": leaf_extract,
+        "pathfinder": pathfinder_extract,
         "chartqa": chartqa_settings,
         "gsm8k": gsm8k_settings,
         "blocksworld": blocksworld_settings,

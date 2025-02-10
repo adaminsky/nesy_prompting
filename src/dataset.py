@@ -51,7 +51,7 @@ class MNISTSumKOrigDataset(torch.utils.data.Dataset):
             labels.append(label)
         sum_label = sum(labels)
 
-        return imgs, sum_label
+        return imgs, sum_label, labels
 
     def __len__(self):
         return len(self.mnist) // self.k
@@ -219,9 +219,9 @@ class PathFinder128Dataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         (img_path, difficulty_id, label) = self.samples[idx]
         img = Image.open(open(img_path, "rb"))
-        if self.transform is not None:
-            img = self.transform(img)
-        return (img, difficulty_id, label)
+        # if self.transform is not None:
+        #     img = self.transform(img)
+        return [img], label, difficulty_id
 
 
 def _dataset_to_tensor(dset, mask=None):
@@ -1315,6 +1315,27 @@ class LeafDataset(torch.utils.data.Dataset):
         # subsample to 200 samples
         random.seed(0)
         self.data = random.sample(self.data, 200)
+
+    def __getitem__(self, index):
+        return self.data[index]
+
+    def __len__(self):
+        return len(self.data)
+
+
+class SceneDataset(torch.utils.data.Dataset):
+    def __init__(self, root="./"):
+        # data is stored in a directory data/scene where each subdirectory is a class
+        self.data = []
+        for i, class_dir in enumerate(os.listdir(root + "data/scene/test")):
+            for img_file in os.listdir(root + f"data/scene/test/{class_dir}"):
+                img_path = root + f"data/scene/test/{class_dir}/{img_file}"
+                label = class_dir
+                self.data.append(([Image.open(img_path).convert("RGB")], label))
+        
+        # subsample to 200 samples
+        # random.seed(0)
+        # self.data = random.sample(self.data, 200)
 
     def __getitem__(self, index):
         return self.data[index]
