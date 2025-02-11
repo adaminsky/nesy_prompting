@@ -19,6 +19,8 @@ from src.program_gen import ProgramSynthesisSolver, DSLOp
 import time
 import itertools
 import PIL
+from PIL import Image, ImageDraw, ImageFont
+from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -75,6 +77,34 @@ class OurLLM:
                 self.text = text
 
         return [Outputs([Text(output_text)])]
+
+
+class APIModel:
+    def __init__(self, model_name):
+        self.model_name = model_name
+        self.client = OpenAI(
+            api_key="***REMOVED***",
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+        )
+
+    def chat(self, prompt, sampling_params, use_tqdm):
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=prompt,
+            temperature=0,
+            max_tokens=2500,
+            top_p=1.0
+        )
+        class Outputs:
+            def __init__(self, outputs):
+                self.outputs = outputs
+
+        class Text:
+            def __init__(self, text):
+                self.text = text
+
+        return [Outputs([Text(response.choices[0].message.content)])]
+
 
 
 def get_predictions(model: LLM, data, prompt):
@@ -413,8 +443,8 @@ def hwf_extract(data, model):
     if args.few_shot:
         digit_examples = IOExamples(
             description=None,
-            inputs=[RawInput(image_input=data[101][0][0], text_input=None), RawInput(image_input=data[101][0][2], text_input=None), RawInput(image_input=data[101][0][4], text_input=None), RawInput(image_input=data[102][0][0], text_input=None), RawInput(image_input=data[102][0][2], text_input=None), RawInput(image_input=data[102][0][4], text_input=None)],
-            outputs=[[2], [9], [4], [6], [1], [1]],
+            inputs=[RawInput(image_input=data[101][0][0], text_input=None), RawInput(image_input=data[101][0][2], text_input=None), RawInput(image_input=data[101][0][4], text_input=None), RawInput(image_input=data[102][0][0], text_input=None), RawInput(image_input=data[102][0][2], text_input=None), RawInput(image_input=data[104][0][4], text_input=None), RawInput(image_input=data[106][0][0], text_input=None)],
+            outputs=[[2], [9], [4], [6], [1], [3], [5]],
         )
     extract_digit = LLMNet(
         model,
@@ -459,7 +489,7 @@ def pathfinder_extract(data, model):
         wx = 128 // num_block_x
         wy = 128 // num_block_y
         def block_coord_to_block_id(x, y):
-            return y + (x * num_block_y)
+            return y * num_block_x + x
 
         adjacency_imgs = []
         adjacency_ids = []
@@ -470,16 +500,30 @@ def pathfinder_extract(data, model):
                 if x >= 0 and x < num_block_x and y >= 0 and y < num_block_y:
                     source_id = (i * wx, j * wy, i * wx + wx, j * wy + wy)
                     target_id = (x * wx, y * wy, x * wx + wx, y * wy + wy)
-                    img_black = torch.zeros_like(img)
-                    img_black[source_id[0]:source_id[2], source_id[1]:source_id[3]] = img[source_id[0]:source_id[2], source_id[1]:source_id[3]]
-                    img_black[target_id[0]:target_id[2], target_id[1]:target_id[3]] = img[target_id[0]:target_id[2], target_id[1]:target_id[3]]
-                    img_black = img_black[min(source_id[0], target_id[0]):max(source_id[2], target_id[2]), min(source_id[1], target_id[1]):max(source_id[3], target_id[3])]
-                    img_black = PIL.Image.fromarray(img_black.numpy())
-                    # crop source and target blocks and then concatenate them
-                    # img_black = PIL.Image.new('RGB', (2 * wx, wy), (255, 255, 255))
-                    # img_black.paste(img.crop(source_id), (0, 0))
-                    # img_black.paste(img.crop(target_id), (wx, 0))
 
+                    img_black = img.clone()
+                    # draw a rectangular outline of the block
+                    img_black[source_id[0], source_id[1]:source_id[3]] = 255
+                    img_black[source_id[2], source_id[1]:source_id[3]] = 255
+                    img_black[source_id[0]:source_id[2], source_id[1]] = 255
+                    img_black[source_id[0]:source_id[2], source_id[3]] = 255
+
+                    img_black[target_id[0], target_id[1]:target_id[3]] = 255
+                    img_black[target_id[2], target_id[1]:target_id[3]] = 255
+                    img_black[target_id[0]:target_id[2], target_id[1]] = 255
+                    img_black[target_id[0]:target_id[2], target_id[3]] = 255
+
+                    # img_black = torch.zeros_like(img)
+                    # img_black[source_id[0]:source_id[2], source_id[1]:source_id[3]] = img[source_id[0]:source_id[2], source_id[1]:source_id[3]]
+                    # img_black[target_id[0]:target_id[2], target_id[1]:target_id[3]] = img[target_id[0]:target_id[2], target_id[1]:target_id[3]]
+                    # img_black = img_black[min(source_id[0], target_id[0]):max(source_id[2], target_id[2]), min(source_id[1], target_id[1]):max(source_id[3], target_id[3])]
+
+                    # if dy == 0: # horizontal
+                    #     img_black[wy - 1, :] = 255
+                    # else: # vertical
+                    #     img_black[:, wx - 1] = 255
+
+                    img_black = PIL.Image.fromarray(img_black.numpy())
                     adjacency_imgs.append(img_black)
 
                     source_id = block_coord_to_block_id(i, j)
@@ -495,29 +539,72 @@ def pathfinder_extract(data, model):
         blocks = []
         for i, j in itertools.product(range(num_block_x), range(num_block_y)):
             # blocks.append(img[i * wx:(i + 1) * wx, j * wy:(j + 1) * wy])
-            blocks.append(img.crop((i * wx, j * wy, (i + 1) * wx, (j + 1) * wy)))
+            # blocks.append(img.crop((i * wx, j * wy, (i + 1) * wx, (j + 1) * wy)))
+            img_block = img.copy()
+            draw = ImageDraw.Draw(img_block)
+            draw.rectangle([i * wx, j * wy, (i + 1) * wx, (j + 1) * wy], outline=255)
+            blocks.append(img_block)
         return blocks
+    
+    def overlay_grid(img: PIL.Image):
+        img = np.array(img)
+        img = img.copy()
+        for i in range(21, img.shape[0]-10, 21):
+            img[i, :] = 255
+            img[:, i] = 255
+        
+        img = Image.fromarray(img)
+        # 9pt font
+        font = ImageFont.load_default(size=7)
+        # write a number in each cell
+        for i in range(0, 128, 21):
+            for j in range(0, 128, 21):
+                draw = ImageDraw.Draw(img)
+
+                draw.text((i+2, j+2), f"{i//21*6 + j//21}", fill="white", font=font)
+
+        return img
+
+    edge_examples = None
+    node_examples = None
+    if args.few_shot:
+        edge_examples = IOExamples(
+            description=None,
+            inputs=[RawInput(image_input=create_adjacency(data[101][0][0])[0][48], text_input=None), RawInput(image_input=create_adjacency(data[101][0][0])[0][0], text_input=None), RawInput(image_input=create_adjacency(data[101][0][0])[0][1], text_input=None), RawInput(image_input=create_adjacency(data[101][0][0])[0][10], text_input=None), RawInput(image_input=create_adjacency(data[101][0][0])[0][12], text_input=None), RawInput(image_input=create_adjacency(data[101][0][0])[0][66], text_input=None)],
+            outputs=[['1'], ['0'], ['1'], ['0'], ['1'], ['0']],
+        )
+        node_examples = IOExamples(
+            description=None,
+            inputs=[RawInput(image_input=create_blocks(data[102][0][0])[15], text_input=None), RawInput(image_input=create_blocks(data[101][0][0])[14], text_input=None), RawInput(image_input=create_blocks(data[101][0][0])[13], text_input=None), RawInput(image_input=create_blocks(data[101][0][0])[4], text_input=None), RawInput(image_input=create_blocks(data[101][0][0])[10], text_input=None), RawInput(image_input=create_blocks(data[101][0][0])[0], text_input=None)],
+            outputs=[['1'], ['1'], ['0'], ['1'], ['0'], ['0']],
+        )
+        # edge_examples = IOExamples(
+        #     description=None,
+        #     inputs=[RawInput(image_input=data[101][0][0], text_input=None)],
+        #     outputs=[['[(0, 1), (1, 2), (3, 9), (4, 5), (5, 11), (8, 14), (8, 9), (10, 16), (11, 17), (12, 18), (12, 13), (14, 20), (14, 15), (15, 16), (16, 17), (20, 26), (24, 30), (24, 25), (25, 31), (26, 32), (27, 28), (29, 35), (33, 34), (34, 35)]']],
+        # )
+        # node_examples = IOExamples(
+        #     description=None,
+        #     inputs=[RawInput(image_input=data[101][0][0], text_input=None)],
+        #     outputs=[['[4, 14]']],
+        # )
 
     edge_model = LLMNet(
         model,
-        "an image which may contain dashed lines",
-        "1 if there is a complete dashed line going across the long side of the image, 0 otherwise",
-        IOExamples(
-            description=None,
-            inputs=[RawInput(image_input=create_adjacency(data[101][0][0])[0][13], text_input=None), RawInput(image_input=create_adjacency(data[101][0][0])[0][18], text_input=None), RawInput(image_input=create_adjacency(data[101][0][0])[0][1], text_input=None), RawInput(image_input=create_adjacency(data[101][0][0])[0][9], text_input=None)],
-            outputs=[['0'], ['1'], ['1'], ['0']],
-        )
+        "an image with two squares outlined",
+        "1 if there is a dashed line which crosses between the two squares, and 0 otherwise",
+        # "an image containing dashed lines and circular nodes",
+        # "an adjacency matrix as a list of tuples representing splitting the input into a 6x6 grid and connecting the adjacent cells which are connected by a dashed line. The cells are numbered from 0 to 35 starting from the top left corner and going down column by column so cell 1 is the cell below the top left corner.",
+        edge_examples,
     )
 
     node_model = LLMNet(
         model,
-        "an image",
-        "1 if there is a circle in the image, 0 otherwise",
-        IOExamples(
-            description=None,
-            inputs=[RawInput(image_input=create_blocks(data[101][0][0])[14], text_input=None), RawInput(image_input=create_blocks(data[101][0][0])[13], text_input=None), RawInput(image_input=create_blocks(data[101][0][0])[4], text_input=None), RawInput(image_input=create_blocks(data[101][0][0])[10], text_input=None)],
-            outputs=[['1'], ['0'], ['1'], ['0']],
-        )
+        "an  image with a square outlined",
+        "1 if there is a large circular node within the outlined square, and 0 if there is nothing or only dashed lines in the square",
+        # "an image containing dashed lines and circular nodes",
+        # "a list of two values representing which of the 36 blocks of the input image (after splitting it into a 6x6 grid) have a circular node. The numbering of the cells is from the top left corner and goes down column by column so cell 1 is the cell below the top left corner.",
+        node_examples,
     )
 
     def parse(img: RawInput):
@@ -530,6 +617,8 @@ def pathfinder_extract(data, model):
             if edge == '1':
                 adjacency_graph.append(adjacency_ids[i]) 
         nodes = [re.sub(r"[^01]", "", node_model.forward(RawInput(image_input=block, text_input=None))) for block in blocks]
+        # adjacency_graph = ast.literal_eval(edge_model.forward(img))
+        # nodes = ast.literal_eval(node_model.forward(img))
 
         return adjacency_graph, nodes
 
@@ -541,6 +630,8 @@ def pathfinder_extract(data, model):
         nodes = np.array([int(node) for node in nodes])
         if np.sum(nodes) != 2:
             return 0
+        # if len(nodes) != 2:
+        #     return 0
 
         node_ids = np.where(nodes == 1)[0]
         print("node_ids:", node_ids)
@@ -1697,16 +1788,18 @@ def main(args):
     #     args.model, torch_dtype=torch.bfloat16
     # ).to("cuda:0")
     # processor = AutoProcessor.from_pretrained(args.model)
-    if not args.use_hf:
+    if not args.use_hf and not "gemini" in args.model.lower():
         model = LLM(
             model=args.model,
             max_model_len=12288,
-            # limit_mm_per_prompt={"image": 10},
+            limit_mm_per_prompt={"image": 10},
             max_num_seqs=1,
             enforce_eager=True if "llama" in args.model.lower() else False,
             trust_remote_code=True,
             tensor_parallel_size=args.num_gpus,
         )
+    elif "gemini" in args.model.lower():
+        model = APIModel(args.model)
     else:
         model = OurLLM(model_name=args.model)
 
