@@ -1,6 +1,6 @@
 import os
 import logging
-from src.dataset import MNISTSumKOrigDataset, GSM8KDataset, ChartQADataset, ClevrDataset, HWFDataset, BlocksWorldDataset, BBHDataset, FOLIODataset, LongSortDataset, ListSynthesisDataset, ClutrrDataset, LeafDataset, PathFinder128Dataset
+from src.dataset import MNISTSumKOrigDataset, GSM8KDataset, ChartQADataset, ClevrDataset, HWFDataset, BlocksWorldDataset, BBHDataset, FOLIODataset, LongSortDataset, ListSynthesisDataset, ClutrrDataset, LeafDataset, PathFinder128Dataset, SVHNSumKDataset
 from tqdm import tqdm
 import argparse
 from vllm import LLM, SamplingParams
@@ -21,6 +21,7 @@ import itertools
 import PIL
 from PIL import Image, ImageDraw, ImageFont
 from openai import OpenAI
+from time import sleep
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -82,10 +83,13 @@ class OurLLM:
 class APIModel:
     def __init__(self, model_name):
         self.model_name = model_name
-        self.client = OpenAI(
-            api_key="***REMOVED***",
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
-        )
+        if "gemini" in model_name:
+            self.client = OpenAI(
+                api_key="***REMOVED***",
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+            )
+        else:
+            self.client = OpenAI(api_key="***REMOVED***")
 
     def chat(self, prompt, sampling_params, use_tqdm):
         response = self.client.chat.completions.create(
@@ -279,14 +283,42 @@ def sum2_extract(data, model):
     if args.few_shot:
         examples = IOExamples(
             description=None,
-            inputs=[RawInput(image_input=data[101][0][0], text_input=None), RawInput(image_input=data[101][0][1], text_input=None), RawInput(image_input=data[101][0][2], text_input=None)],
-            outputs=[[7], [6], [1]],
+            inputs=[RawInput(image_input=data[101][0][0], text_input=None), RawInput(image_input=data[101][0][1], text_input=None), RawInput(image_input=data[101][0][3], text_input=None), RawInput(image_input=data[101][0][4], text_input=None), RawInput(image_input=data[102][0][0], text_input=None), RawInput(image_input=data[102][0][1], text_input=None), RawInput(image_input=data[102][0][2], text_input=None), ],
+            outputs=[[3], [1], [6], [5], [7], [4], [2]],
         )
 
     mnist_extract = LLMNet(
         model,
         "an image of a handwritten digit",
         "the digit as an integer from 0 to 9",
+        examples
+    )
+
+    def parse(*imgs):
+        digits = []
+        for img in imgs:
+            digits.append(int(re.sub(r"[^0-9]", "", mnist_extract.forward(img))))
+        return digits
+
+    def function(*digits):
+        return sum(digits)
+
+    return parse, function
+
+
+def svhn_extract(data, model):
+    examples = None
+    if args.few_shot:
+        examples = IOExamples(
+            description=None,
+            inputs=[RawInput(image_input=data[101][0][0], text_input=None), RawInput(image_input=data[101][0][1], text_input=None), RawInput(image_input=data[101][0][2], text_input=None), RawInput(image_input=data[102][0][0], text_input=None), RawInput(image_input=data[102][0][1], text_input=None), RawInput(image_input=data[102][0][2], text_input=None)],
+            outputs=[[7], [5], [6], [6], [2], [3]],
+        )
+
+    mnist_extract = LLMNet(
+        model,
+        "an image of a number",
+        "the number in the center of the image from 0 to 9. Ignore any other digits in the image and make a best guess if the number is unclear.",
         examples
     )
 
@@ -443,8 +475,8 @@ def hwf_extract(data, model):
     if args.few_shot:
         digit_examples = IOExamples(
             description=None,
-            inputs=[RawInput(image_input=data[101][0][0], text_input=None), RawInput(image_input=data[101][0][2], text_input=None), RawInput(image_input=data[101][0][4], text_input=None), RawInput(image_input=data[102][0][0], text_input=None), RawInput(image_input=data[102][0][2], text_input=None), RawInput(image_input=data[104][0][4], text_input=None), RawInput(image_input=data[106][0][0], text_input=None)],
-            outputs=[[2], [9], [4], [6], [1], [3], [5]],
+            inputs=[RawInput(image_input=data[102][0][2], text_input=None), RawInput(image_input=data[101][0][0], text_input=None), RawInput(image_input=data[104][0][4], text_input=None), RawInput(image_input=data[101][0][4], text_input=None), RawInput(image_input=data[106][0][0], text_input=None)],
+            outputs=[[1], [2], [3], [4], [5]],
         )
     extract_digit = LLMNet(
         model,
@@ -570,13 +602,13 @@ def pathfinder_extract(data, model):
     if args.few_shot:
         edge_examples = IOExamples(
             description=None,
-            inputs=[RawInput(image_input=create_adjacency(data[101][0][0])[0][48], text_input=None), RawInput(image_input=create_adjacency(data[101][0][0])[0][0], text_input=None), RawInput(image_input=create_adjacency(data[101][0][0])[0][1], text_input=None), RawInput(image_input=create_adjacency(data[101][0][0])[0][10], text_input=None), RawInput(image_input=create_adjacency(data[101][0][0])[0][12], text_input=None), RawInput(image_input=create_adjacency(data[101][0][0])[0][66], text_input=None)],
-            outputs=[['1'], ['0'], ['1'], ['0'], ['1'], ['0']],
+            inputs=[RawInput(image_input=create_adjacency(data[101][0][0])[0][0], text_input=None), RawInput(image_input=create_adjacency(data[101][0][0])[0][1], text_input=None), RawInput(image_input=create_adjacency(data[101][0][0])[0][3], text_input=None), RawInput(image_input=create_adjacency(data[101][0][0])[0][4], text_input=None), RawInput(image_input=create_adjacency(data[101][0][0])[0][6], text_input=None), RawInput(image_input=create_adjacency(data[101][0][0])[0][7], text_input=None)],
+            outputs=[['0'], ['1'], ['0'], ['0'], ['1'], ['1']],
         )
         node_examples = IOExamples(
             description=None,
-            inputs=[RawInput(image_input=create_blocks(data[102][0][0])[15], text_input=None), RawInput(image_input=create_blocks(data[101][0][0])[14], text_input=None), RawInput(image_input=create_blocks(data[101][0][0])[13], text_input=None), RawInput(image_input=create_blocks(data[101][0][0])[4], text_input=None), RawInput(image_input=create_blocks(data[101][0][0])[10], text_input=None), RawInput(image_input=create_blocks(data[101][0][0])[0], text_input=None)],
-            outputs=[['1'], ['1'], ['0'], ['1'], ['0'], ['0']],
+            inputs=[RawInput(image_input=create_blocks(data[101][0][0])[12], text_input=None), RawInput(image_input=create_blocks(data[101][0][0])[13], text_input=None), RawInput(image_input=create_blocks(data[101][0][0])[14], text_input=None), RawInput(image_input=create_blocks(data[101][0][0])[15], text_input=None)],
+            outputs=[['0'], ['0'], ['1'], ['0']],
         )
         # edge_examples = IOExamples(
         #     description=None,
@@ -591,8 +623,8 @@ def pathfinder_extract(data, model):
 
     edge_model = LLMNet(
         model,
-        "an image with two squares outlined",
-        "1 if there is a dashed line which crosses between the two squares, and 0 otherwise",
+        "an image with dashed lines with two adjacent cells outlined",
+        "1 if the two outlined cells contain a contiguous dashed line going from one square to the other, and 0 otherwise. The output should be 0 if each cell contains separate dashed lines that do not connect to the other cell.",
         # "an image containing dashed lines and circular nodes",
         # "an adjacency matrix as a list of tuples representing splitting the input into a 6x6 grid and connecting the adjacent cells which are connected by a dashed line. The cells are numbered from 0 to 35 starting from the top left corner and going down column by column so cell 1 is the cell below the top left corner.",
         edge_examples,
@@ -600,8 +632,8 @@ def pathfinder_extract(data, model):
 
     node_model = LLMNet(
         model,
-        "an  image with a square outlined",
-        "1 if there is a large circular node within the outlined square, and 0 if there is nothing or only dashed lines in the square",
+        "an image with a square cell outlined",
+        "1 if there is the majority of a large circular node lies within the outlined square cell, and 0 if there is nothing, only dashed lines, or a small part of the circle in the square cell",
         # "an image containing dashed lines and circular nodes",
         # "a list of two values representing which of the 36 blocks of the input image (after splitting it into a 6x6 grid) have a circular node. The numbering of the cells is from the top left corner and goes down column by column so cell 1 is the cell below the top left corner.",
         node_examples,
@@ -661,17 +693,17 @@ def leaf_extract(data, model):
     if args.few_shot:
         margin_examples = IOExamples(
             description=None,
-            inputs=[RawInput(image_input=data[101][0][0], text_input=None), RawInput(image_input=data[103][0][0], text_input=None), RawInput(image_input=data[36][0][0], text_input=None)],
-            outputs=[['undulate'], ['entire'], ["indented"]],
+            inputs=[RawInput(image_input=data[103][0][0], text_input=None), RawInput(image_input=data[126][0][0], text_input=None), RawInput(image_input=data[104][0][0], text_input=None)],
+            outputs=[['entire'], ["lobed"], ["indented"]],
         )
         shape_examples = IOExamples(
             description=None,
-            inputs=[RawInput(image_input=data[101][0][0], text_input=None), RawInput(image_input=data[103][0][0], text_input=None), RawInput(image_input=data[15][0][0], text_input=None)],
-            outputs=[['elliptical'], ['ovate'], ['lanceolate']],
+            inputs=[RawInput(image_input=data[101][0][0], text_input=None), RawInput(image_input=data[15][0][0], text_input=None), RawInput(image_input=data[3][0][0], text_input=None), RawInput(image_input=data[0][0][0], text_input=None), RawInput(image_input=data[11][0][0], text_input=None)],
+            outputs=[['elliptical'], ['lanceolate'], ['ovate'], ['obovate'], ['oblong']],
         )
         texture_examples = IOExamples(
             description=None,
-            inputs=[RawInput(image_input=data[106][0][0], text_input=None), RawInput(image_input=data[110][0][0], text_input=None), RawInput(image_input=data[137][0][0], text_input=None)],
+            inputs=[RawInput(image_input=data[14][0][0], text_input=None), RawInput(image_input=data[110][0][0], text_input=None), RawInput(image_input=data[137][0][0], text_input=None)],
             outputs=[['leathery'], ['smooth'], ['glossy']],
         )
 
@@ -1587,7 +1619,9 @@ def get_equivalence(args):
 
 def create_symbol_extractor(args, model):
     if args.dataset == "sum2":
-        data = MNISTSumKOrigDataset(root="data", train=True, download=True, k=5)
+        data = MNISTSumKOrigDataset(root="data", train=False, download=True, k=5)
+    elif args.dataset == "svhn":
+        data = SVHNSumKDataset(root="data", k=5, train=False)
     elif args.dataset == "hwf":
         data = HWFDataset(root="data", split="train", length=5)
     elif args.dataset == "clutrr":
@@ -1621,6 +1655,7 @@ def create_symbol_extractor(args, model):
 
     all_get_symbols = {
         "sum2": sum2_extract,
+        "svhn": svhn_extract,
         "hwf": hwf_extract,
         "clutrr": clutrr_extract,
         "clevr": clevr_settings,
@@ -1788,7 +1823,7 @@ def main(args):
     #     args.model, torch_dtype=torch.bfloat16
     # ).to("cuda:0")
     # processor = AutoProcessor.from_pretrained(args.model)
-    if not args.use_hf and not "gemini" in args.model.lower():
+    if not args.use_hf and not "gemini" in args.model.lower() and not "gpt" in args.model.lower() and not "o1" in args.model.lower():
         model = LLM(
             model=args.model,
             max_model_len=12288,
@@ -1798,7 +1833,7 @@ def main(args):
             trust_remote_code=True,
             tensor_parallel_size=args.num_gpus,
         )
-    elif "gemini" in args.model.lower():
+    elif "gemini" in args.model.lower() or "gpt" in args.model.lower() or "o1" in args.model.lower():
         model = APIModel(args.model)
     else:
         model = OurLLM(model_name=args.model)

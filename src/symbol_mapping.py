@@ -732,6 +732,9 @@ class LLMNet:
         if self.examples is not None:
             for i, (ex_input, ex_output) in enumerate(zip(self.examples.inputs, self.examples.outputs)):
                 prompt_content = []
+                prompt_content.append(
+                    {"type": "text", "text": f"The following is {self.input_desc}. Output just {self.output_desc} after 'FINAL ANSWER:'. The input is: "}
+                )
 
                 symbol_str = ", ".join([json.dumps(o).encode('utf-8').decode('unicode_escape') for o in ex_output])
                 if ex_input.text_input is not None and ex_input.image_input is None:
@@ -747,7 +750,8 @@ class LLMNet:
                             {
                                 "type": "image_url",
                                 "image_url": {
-                                    "url": f"data:image/jpeg;base64,{img2base64(ex_input.image_input)}"
+                                    "url": f"data:image/jpeg;base64,{img2base64(ex_input.image_input)}",
+                                    "detail": "high"
                                 },
                             },
                         ]
@@ -758,7 +762,8 @@ class LLMNet:
                             {
                                 "type": "image_url",
                                 "image_url": {
-                                    "url": f"data:image/jpeg;base64,{img2base64(ex_input.image_input)}"
+                                    "url": f"data:image/jpeg;base64,{img2base64(ex_input.image_input)}",
+                                    "detail": "high"
                                 },
                             },
                             {
@@ -767,33 +772,30 @@ class LLMNet:
                             },
                         ]
                     )
-                prompt_content.append(
-                    {"type": "text", "text": f" The above is {self.input_desc}. Output just {self.output_desc} after 'FINAL ANSWER:'. The input is: "}
-                )
                 prompt.append({"role": "user", "content": prompt_content})
                 prompt.append({"role": "assistant", "content": [{"type": "text", "text": f"FINAL ANSWER: {symbol_str}"}]})
 
         prompt_content = []
 
         # Adding the input to the prompt (text or image)
+        prompt_content.append(
+            {"type": "text", "text": f"The following is {self.input_desc}. Output just {self.output_desc} after 'FINAL ANSWER:'. The input is: "}
+        )
         if input.text_input is not None and input.image_input is None:
             prompt_content.append({"type": "text", "text": input.text_input})
         elif input.text_input is None and input.image_input is not None:
             prompt_content.extend(
                 [
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img2base64(input.image_input)}"}},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img2base64(input.image_input)}", "detail": "high"}},
                 ]
             )
         else:
             prompt_content.extend(
                 [
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img2base64(input.image_input)}"}},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img2base64(input.image_input)}", "detail": "high"}},
                     {"type": "text", "text": input.text_input},
                 ]
             )
-        prompt_content.append(
-            {"type": "text", "text": f" The above is {self.input_desc}. Output just {self.output_desc} after 'FINAL ANSWER:'.\nThe input is: "}
-        )
         
         # prompt_content.append({"type": "text", "text": f"Output just {self.output_desc} after 'FINAL ANSWER:'."})
         # prompt_content.append({"type": "text", "text": " Make sure to output only the answer after 'FINAL ANSWER:'."})
