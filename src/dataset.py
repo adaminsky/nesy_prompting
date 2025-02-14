@@ -235,9 +235,9 @@ def _dataset_to_tensor(dset, mask=None):
 class ClevrDataset(torch.utils.data.Dataset):
     def __init__(
         self,
-        questions_path="./data/CLEVR_v1.0/questions/CLEVR_train_questions.json",
-        images_path="./data/CLEVR_v1.0/images/train/",
-        scene_path="./data/CLEVR_v1.0/scenes/CLEVR_train_scenes.json",
+        questions_path="./data/CLEVR_v1.0/questions/CLEVR_val_questions.json",
+        images_path="./data/CLEVR_v1.0/images/val/",
+        scene_path="./data/CLEVR_v1.0/scenes/CLEVR_val_scenes.json",
         max_samples=None,
     ):
         self.images_path = images_path
@@ -316,11 +316,15 @@ class ClevrDataset(torch.utils.data.Dataset):
 
         image = None
         if self.images_path is not None:
+            prefix = "train" if "train" in self.images_path else "val"
             image = Image.open(
                 os.path.join(
-                    self.images_path, f"CLEVR_train_{str(image_idx).zfill(6)}.png"
+                    self.images_path, f"CLEVR_{prefix}_{str(image_idx).zfill(6)}.png"
                 )
             )
+            # print(os.path.join(
+            #         self.images_path, f"CLEVR_{prefix}_{str(image_idx).zfill(6)}.png"
+            #     ))
             # image = torch.FloatTensor(np.asarray(image, dtype=np.float32))
 
         # program_json = None
@@ -341,7 +345,7 @@ class ClevrDataset(torch.utils.data.Dataset):
             scene = self.all_scenes[index]
 
         # return (question, image, answer, program_seq, scene)
-        return ((image, question), answer, (program_seq, scene))
+        return ((image, program_seq), answer, (question, scene))
 
     def __len__(self):
         if self.max_samples is None:
