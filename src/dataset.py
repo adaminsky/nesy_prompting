@@ -21,14 +21,53 @@ from sudoku import Sudoku
 import re
 import csv
 import ast
+from scipy.io import loadmat
 logger = logging.getLogger(__name__)
+
+
+class SVHNSumKDataset(torch.utils.data.Dataset):
+    def __init__(self, root, train=True, k=2):
+        if train:
+            mat = loadmat(os.path.join(root, "SVHN/train_32x32.mat"))
+        else:
+            mat = loadmat(os.path.join(root, "SVHN/test_32x32.mat"))
+        data, labels = mat["X"], mat["y"]
+
+        # create PIL Images
+        data = data.transpose(3, 0, 1, 2)
+        self.data = [Image.fromarray(data[i]) for i in range(data.shape[0])]
+        # shuffle dataset and labels with seed 0
+        np.random.seed(0)
+        shuf = np.random.permutation(len(self.data))
+        self.data = [self.data[i] for i in shuf]
+        labels = labels[shuf] % 10
+
+        self.labels = labels.flatten()
+        self.k = k
+
+    def __getitem__(self, index):
+        imgs = []
+        labels = []
+        for i in range(self.k):
+            img = self.data[index * self.k + i]
+            label = self.labels[index * self.k + i]
+            imgs.append(img)
+            labels.append(label)
+        sum_label = sum(labels)
+        img = Image.new("RGB", (32 * self.k, 32))
+        for i in range(self.k):
+            img.paste(imgs[i], (32 * i, 0))
+        return imgs, sum_label, labels
+
+    def __len__(self):
+        return len(self.data) // self.k
 
 
 class MNISTSumKOrigDataset(torch.utils.data.Dataset):
     def __init__(
         self,
         root,
-        train=True,
+        train=False,
         transform=None,
         target_transform=None,
         download=False,
@@ -1300,7 +1339,7 @@ class ClutrrDataset(torch.utils.data.Dataset):
         # query = str(re.findall(r"\[(.*?)\]", query))
 
         # return (story, query), self.data[index]["answer"].split("#### ")[1]
-        return (story, query), self.data[index]["answer"]
+        return [story, query], self.data[index]["answer"]
 
     def __len__(self):
         return len(self.data)
