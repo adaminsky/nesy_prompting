@@ -5,6 +5,7 @@ import json
 import inspect
 import re
 import logging
+from time import sleep
 logger = logging.getLogger(__name__)
 
 
@@ -696,11 +697,13 @@ def prompting_mapper_structure(
 
 
 class LLMNet:
-    def __init__(self, model: LLM, input_desc: str, output_desc: str, examples: Optional[IOExamples]=None) -> str:
+    def __init__(self, model: LLM, input_desc: str, output_desc: str, examples: Optional[IOExamples]=None, few_shot=True, image_before_prompt=False) -> str:
         self.model = model
         self.input_desc = input_desc
         self.output_desc = output_desc
         self.examples = examples
+        self.few_shot = few_shot
+        self.image_before_prompt = image_before_prompt
 
     def forward(self, input: RawInput) -> str:
         prompt = []
@@ -729,14 +732,28 @@ class LLMNet:
 
 
         # Adding any the examples to the prompt
+        prompt_content = []
         if self.examples is not None:
             for i, (ex_input, ex_output) in enumerate(zip(self.examples.inputs, self.examples.outputs)):
-                prompt_content = []
-                prompt_content.append(
-                    {"type": "text", "text": f"The following is {self.input_desc}. Output just {self.output_desc} after 'FINAL ANSWER:'. The input is: "}
-                )
-
                 symbol_str = ", ".join([json.dumps(o).encode('utf-8').decode('unicode_escape') for o in ex_output])
+
+                if i == 0:
+                    prompt_content.append({"type": "text", "text": f"After examining the input, determine {self.output_desc}. Here are some examples:"})
+
+
+                if not self.image_before_prompt:
+                    if self.few_shot:
+                        prompt_content.append(
+                            {"type": "text", "text": f"\nThe following input is {self.input_desc}. Output just {self.output_desc} after 'FINAL ANSWER:'."}
+                        )
+                    else:
+                        prompt_content.append(
+                            {"type": "text", "text": f"\nThe following is an example of {symbol_str}:"}
+                        )
+                else:
+                    prompt_content.append({"type": "text", "text": f"\nExample {i + 1}:"})
+
+
                 if ex_input.text_input is not None and ex_input.image_input is None:
                     prompt_content.append(
                         {
@@ -772,15 +789,33 @@ class LLMNet:
                             },
                         ]
                     )
-                prompt.append({"role": "user", "content": prompt_content})
-                prompt.append({"role": "assistant", "content": [{"type": "text", "text": f"FINAL ANSWER: {symbol_str}"}]})
 
-        prompt_content = []
+                if self.image_before_prompt:
+                    if self.few_shot:
+                        prompt_content.append(
+                            {"type": "text", "text": f"The input is {self.input_desc}. Output just {self.output_desc} after 'FINAL ANSWER:'."}
+                        )
+                    else:
+                        prompt_content.append(
+                            {"type": "text", "text": f"This is an example of {symbol_str}."}
+                        )
+
+                if self.few_shot:
+                    prompt.append({"role": "user", "content": prompt_content})
+                    prompt.append({"role": "assistant", "content": [{"type": "text", "text": f"FINAL ANSWER: {symbol_str}"}]})
+                    prompt_content = []
+
+        if not self.image_before_prompt:
+            prompt_content.append(
+                {"type": "text", "text": f"\nThe following input is {self.input_desc}. Examine it and then output just {self.output_desc} after 'FINAL ANSWER:'. If unsure of the answer, try to choose the best option."}
+            )
+        else:
+            prompt_content.append(
+                {"type": "text", "text": f"\n"}
+            )
+        
 
         # Adding the input to the prompt (text or image)
-        prompt_content.append(
-            {"type": "text", "text": f"The following is {self.input_desc}. Output just {self.output_desc} after 'FINAL ANSWER:'. The input is: "}
-        )
         if input.text_input is not None and input.image_input is None:
             prompt_content.append({"type": "text", "text": input.text_input})
         elif input.text_input is None and input.image_input is not None:
@@ -795,6 +830,11 @@ class LLMNet:
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img2base64(input.image_input)}", "detail": "high"}},
                     {"type": "text", "text": input.text_input},
                 ]
+            )
+        
+        if self.image_before_prompt:
+            prompt_content.append(
+                {"type": "text", "text": f"The input is {self.input_desc}. Examine it and then output just {self.output_desc} after 'FINAL ANSWER:'. If unsure of the answer, try to choose the best option."}
             )
         
         # prompt_content.append({"type": "text", "text": f"Output just {self.output_desc} after 'FINAL ANSWER:'."})
@@ -849,15 +889,20 @@ class LLMNet:
             elif "*Answer*:" in output:
                 res = re.findall(r"\*Answer\*:(.*)(?:<|$)", output, *extra_args)[-1]
                 pred = res.strip()
-            else:
+            elif "FINAL ANSWER:" in output:
                 # print("here", re.findall(r"FINAL ANS.*:(.*)(?:<|$)", output, *extra_args))
                 res = re.findall(r"FINAL ANSWER:(.*)(?:<|$)", output, *extra_args)[-1]
                 pred = res.strip()
+            else:
+                pred = output.strip()
 
             if "```" in pred:
                 pred = re.sub(r"```", "", pred).strip()
             if "<|eot_id|>" in pred:
                 pred = re.sub(r"<\|eot_id\|>", "", pred).strip()
+            if "\\text{" in pred:
+                res = re.findall(r"\\text{(.*?)}", pred, *extra_args)[-1]
+                pred = res.strip()
             return pred
         except Exception:
             return "None"

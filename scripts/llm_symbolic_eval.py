@@ -9,7 +9,7 @@ import json
 import numpy as np
 import torch
 import ast
-from transformers import MllamaForConditionalGeneration, AutoProcessor, AutoModelForCausalLM, AutoTokenizer, Qwen2_5_VLForConditionalGeneration
+from transformers import MllamaForConditionalGeneration, AutoProcessor, AutoModelForCausalLM, AutoTokenizer, Qwen2_5_VLForConditionalGeneration, Qwen2VLForConditionalGeneration, AutoModel, PaliGemmaForConditionalGeneration, PaliGemmaProcessor
 from src.symbol_mapping import LLMNet
 from src.function import LLMNesy
 from src.utils import IOExamples, RawInput, img2base64, base642img, eval_extracted_code
@@ -19,6 +19,7 @@ from src.program_gen import ProgramSynthesisSolver, DSLOp
 import time
 import itertools
 import PIL
+from matplotlib import pyplot as plt
 from PIL import Image, ImageDraw, ImageFont
 from openai import OpenAI
 from time import sleep
@@ -33,9 +34,18 @@ class OurLLM:
         if "Llama-3.2" in model_name:
             self.model = MllamaForConditionalGeneration.from_pretrained(model_name, torch_dtype="auto", device_map="auto", token="***REMOVED***",)
             self.processor = AutoProcessor.from_pretrained(model_name, token="***REMOVED***")
-        elif "Qwen" in model_name:
-            self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(model_name, torch_dtype="auto", device_map="auto", attn_implementation="flash_attention_2", token="***REMOVED***")
+        elif "QVQ" in model_name:
+            self.model = Qwen2VLForConditionalGeneration.from_pretrained(model_name, torch_dtype="auto", device_map="auto", attn_implementation="flash_attention_2", token="***REMOVED***")
             self.processor = AutoProcessor.from_pretrained(model_name, token="***REMOVED***")
+        elif "Qwen" in model_name:
+            self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(model_name, torch_dtype=torch.bfloat16, device_map="auto", attn_implementation="flash_attention_2", token="***REMOVED***")
+            self.processor = AutoProcessor.from_pretrained(model_name, token="***REMOVED***")
+        elif "OpenGVLab/InternVL2_5-78B-MPO" in model_name:
+            self.model = AutoModel.from_pretrained(model_name, torch_dtype="auto", device_map="auto", attn_implementation="flash_attention_2", token="***REMOVED***", trust_remote_code=True)
+            self.processor = AutoProcessor.from_pretrained(model_name, token="***REMOVED***", trust_remote_code=True)
+        elif "paligemma" in model_name:
+            self.model = PaliGemmaForConditionalGeneration.from_pretrained(model_name, torch_dtype=torch.bfloat16, device_map="auto").eval()
+            self.processor = PaliGemmaProcessor.from_pretrained(model_name)
 
     def chat(self, prompt, sampling_params, use_tqdm):
         # parse prompt content
@@ -95,7 +105,7 @@ class APIModel:
         response = self.client.chat.completions.create(
             model=self.model_name,
             messages=prompt,
-            temperature=0,
+            temperature=0.0,
             max_tokens=2500,
             top_p=1.0
         )
@@ -106,6 +116,10 @@ class APIModel:
         class Text:
             def __init__(self, text):
                 self.text = text
+
+        # print number of tokens
+        print("Prompt tokens:", response.usage.prompt_tokens)
+        print("Response tokens:", response.usage.completion_tokens)
 
         return [Outputs([Text(response.choices[0].message.content)])]
 
@@ -283,15 +297,19 @@ def sum2_extract(data, model):
     if args.few_shot:
         examples = IOExamples(
             description=None,
-            inputs=[RawInput(image_input=data[101][0][0], text_input=None), RawInput(image_input=data[101][0][1], text_input=None), RawInput(image_input=data[101][0][3], text_input=None), RawInput(image_input=data[101][0][4], text_input=None), RawInput(image_input=data[102][0][0], text_input=None), RawInput(image_input=data[102][0][1], text_input=None), RawInput(image_input=data[102][0][2], text_input=None), ],
-            outputs=[[3], [1], [6], [5], [7], [4], [2]],
+            # inputs=[RawInput(image_input=data[0][0][0], text_input=None), RawInput(image_input=data[0][0][1], text_input=None), RawInput(image_input=data[0][0][2], text_input=None), RawInput(image_input=data[0][0][3], text_input=None), RawInput(image_input=data[0][0][4], text_input=None)],
+            # outputs=[[5], [0], [4], [1], [9]],
+            inputs=[RawInput(image_input=data[0][0][1], text_input=None), RawInput(image_input=data[0][0][3], text_input=None), RawInput(image_input=data[1][0][0], text_input=None), RawInput(image_input=data[1][0][2], text_input=None), RawInput(image_input=data[0][0][2], text_input=None)],
+            outputs=[[0], [1], [2], [3], [4]],
         )
 
     mnist_extract = LLMNet(
         model,
         "an image of a handwritten digit",
         "the digit as an integer from 0 to 9",
-        examples
+        examples,
+        few_shot=not args.single_turn,
+        image_before_prompt=args.image_before
     )
 
     def parse(*imgs):
@@ -311,14 +329,14 @@ def svhn_extract(data, model):
     if args.few_shot:
         examples = IOExamples(
             description=None,
-            inputs=[RawInput(image_input=data[101][0][0], text_input=None), RawInput(image_input=data[101][0][1], text_input=None), RawInput(image_input=data[101][0][2], text_input=None), RawInput(image_input=data[102][0][0], text_input=None), RawInput(image_input=data[102][0][1], text_input=None), RawInput(image_input=data[102][0][2], text_input=None)],
-            outputs=[[7], [5], [6], [6], [2], [3]],
+            inputs=[RawInput(image_input=data[101][0][0], text_input=None), RawInput(image_input=data[101][0][1], text_input=None), RawInput(image_input=data[101][0][2], text_input=None), RawInput(image_input=data[101][0][3], text_input=None), RawInput(image_input=data[102][0][1], text_input=None), RawInput(image_input=data[102][0][2], text_input=None)],
+            outputs=[[7], [5], [6], [1], [2], [3]],
         )
 
     mnist_extract = LLMNet(
         model,
-        "an image of a number",
-        "the number in the center of the image from 0 to 9. Ignore any other digits in the image and make a best guess if the number is unclear.",
+        "a cropped image of a house number from a full street view image",
+        "the number in the center of the image from 0 to 9 (ignore any other digits to the sides of the image and make a best guess if unsure)",
         examples
     )
 
@@ -475,27 +493,31 @@ def hwf_extract(data, model):
     if args.few_shot:
         digit_examples = IOExamples(
             description=None,
-            inputs=[RawInput(image_input=data[102][0][2], text_input=None), RawInput(image_input=data[101][0][0], text_input=None), RawInput(image_input=data[104][0][4], text_input=None), RawInput(image_input=data[101][0][4], text_input=None), RawInput(image_input=data[106][0][0], text_input=None)],
+            inputs=[RawInput(image_input=data[1][0][0], text_input=None), RawInput(image_input=data[1][0][2], text_input=None), RawInput(image_input=data[2][0][2], text_input=None), RawInput(image_input=data[0][0][0], text_input=None), RawInput(image_input=data[10][0][4], text_input=None)],
             outputs=[[1], [2], [3], [4], [5]],
         )
     extract_digit = LLMNet(
         model,
         "a handwritten number from 0 to 9",
         "the value of the number as an integer from 0 to 9",
-        digit_examples
+        digit_examples,
+        few_shot=not args.single_turn,
+        image_before_prompt=args.image_before
     )
     operator_examples = None
     if args.few_shot:
         operator_examples = IOExamples(
             description=None,
-            inputs=[RawInput(image_input=data[101][0][1], text_input=None), RawInput(image_input=data[101][0][3], text_input=None), RawInput(image_input=data[102][0][3], text_input=None), RawInput(image_input=data[103][0][1], text_input=None)],
+            inputs=[RawInput(image_input=data[2][0][3], text_input=None), RawInput(image_input=data[1][0][3], text_input=None), RawInput(image_input=data[1][0][1], text_input=None), RawInput(image_input=data[4][0][3], text_input=None)],
             outputs=[['/'], ['*'], ['-'], ['+']],
         )
     extract_operator = LLMNet(
         model,
         "a handwritten arithmetic operator",
         "the operator as a string in the set {'+', '-', '*', '/'} (note that the division operator can look like a line with a dot above and below it and multiplication can look like an 'x')",
-        operator_examples
+        operator_examples,
+        few_shot=not args.single_turn,
+        image_before_prompt=args.image_before
     )
 
     def parse(*imgs):
@@ -693,37 +715,62 @@ def leaf_extract(data, model):
     if args.few_shot:
         margin_examples = IOExamples(
             description=None,
-            inputs=[RawInput(image_input=data[103][0][0], text_input=None), RawInput(image_input=data[126][0][0], text_input=None), RawInput(image_input=data[104][0][0], text_input=None)],
-            outputs=[['entire'], ["lobed"], ["indented"]],
+            inputs=[RawInput(image_input=data[16][0][0], text_input=None), RawInput(image_input=data[25][0][0], text_input=None), RawInput(image_input=data[23][0][0], text_input=None), RawInput(image_input=data[11][0][0], text_input=None), RawInput(image_input=data[61][0][0], text_input=None)],
+            outputs=[['serrate'], ["entire"], ["indented"], ["lobed"], ["undulate"]],
         )
-        shape_examples = IOExamples(
-            description=None,
-            inputs=[RawInput(image_input=data[101][0][0], text_input=None), RawInput(image_input=data[15][0][0], text_input=None), RawInput(image_input=data[3][0][0], text_input=None), RawInput(image_input=data[0][0][0], text_input=None), RawInput(image_input=data[11][0][0], text_input=None)],
-            outputs=[['elliptical'], ['lanceolate'], ['ovate'], ['obovate'], ['oblong']],
-        )
+        # shape_examples = IOExamples(
+        #     description=None,
+        #     inputs=[RawInput(image_input=data[5][0][0], text_input=None), RawInput(image_input=data[50][0][0], text_input=None), RawInput(image_input=data[188][0][0], text_input=None), RawInput(image_input=data[0][0][0], text_input=None)],
+        #     outputs=[['lanceolate'], ['ovate'], ['obovate'], ['oblong']],
+        # )
         texture_examples = IOExamples(
             description=None,
-            inputs=[RawInput(image_input=data[14][0][0], text_input=None), RawInput(image_input=data[110][0][0], text_input=None), RawInput(image_input=data[137][0][0], text_input=None)],
+            inputs=[RawInput(image_input=data[7][0][0], text_input=None), RawInput(image_input=data[25][0][0], text_input=None), RawInput(image_input=data[62][0][0], text_input=None)],
             outputs=[['leathery'], ['smooth'], ['glossy']],
         )
+        # load examples from data/leaf_examples/*.png
+        shape_examples = IOExamples(
+            description=None,
+            inputs=[
+                    RawInput(image_input=Image.open(f"data/leaf_examples/elliptical.png"), text_input=None),
+                    RawInput(image_input=Image.open(f"data/leaf_examples/lanceolate.png"), text_input=None),
+                    RawInput(image_input=Image.open(f"data/leaf_examples/oblong.png"), text_input=None),
+                    RawInput(image_input=Image.open(f"data/leaf_examples/obovate.png"), text_input=None),
+                    RawInput(image_input=Image.open(f"data/leaf_examples/ovate.png"), text_input=None),
+                    RawInput(image_input=data[5][0][0], text_input=None),
+                    RawInput(image_input=data[50][0][0], text_input=None),
+                    RawInput(image_input=data[188][0][0], text_input=None),
+                    RawInput(image_input=data[0][0][0], text_input=None)
+                ],
+            outputs=[['elliptical'], ['lanceolate'], ['oblong'], ['obovate'], ['ovate'],
+                     ['lanceolate'], ['ovate'], ['obovate'], ['oblong']],
+            # ]
+        )
+
 
     margin_net = LLMNet(
         model,
         "an image of a leaf",
-        "the classification of the leaf's margin as one of the following: {'entire', 'indented', 'lobed', 'serrate', 'serrulate', 'undulate'}.",
-        margin_examples
+        "the classification of the leaf's margin as one of {'entire', 'indented', 'lobed', 'serrate', 'serrulate', 'undulate'}",
+        margin_examples,
+        few_shot=not args.single_turn,
+        image_before_prompt=args.image_before
     )
     shape_net = LLMNet(
         model,
-        "an image of a leaf",
-        "the classification of the leaf's shape as one of the following: {'elliptical', 'lanceolate', 'oblong', 'obovate', 'ovate'}.",
-        shape_examples
+        "an image of a leaf that is either shaped as elliptical, lanceolate, oblong, obovate, or ovate",
+        "the leaf's shape as one of {'elliptical', 'lanceolate', 'oblong', 'obovate', 'ovate'}",
+        shape_examples,
+        few_shot=not args.single_turn,
+        image_before_prompt=args.image_before
     )
     texture_net = LLMNet(
         model,
         "an image of a leaf",
-        "the classification of the leaf's texture as one of the following: {'glossy', 'leathery', 'smooth', 'rough'}.",
-        texture_examples
+        "the classification of the leaf's texture as one of {'glossy', 'leathery', 'smooth', 'rough'}",
+        texture_examples,
+        few_shot=not args.single_turn,
+        image_before_prompt=args.image_before
     )
 
     def parse(img):
@@ -1620,14 +1667,19 @@ def get_equivalence(args):
 def create_symbol_extractor(args, model):
     if args.dataset == "sum2":
         data = MNISTSumKOrigDataset(root="data", train=False, download=True, k=5)
+        train_data = MNISTSumKOrigDataset(root="data", train=True, download=True, k=5)
     elif args.dataset == "svhn":
         data = SVHNSumKDataset(root="data", k=5, train=False)
+        train_data = SVHNSumKDataset(root="data", k=5, train=True)
     elif args.dataset == "hwf":
-        data = HWFDataset(root="data", split="train", length=5)
+        data = HWFDataset(root="data", split="test", length=5)
+        train_data = HWFDataset(root="data", split="train", length=5)
     elif args.dataset == "clutrr":
         data = ClutrrDataset()
+        train_data = ClutrrDataset(train=True)
     elif args.dataset == "leaf":
         data = LeafDataset()
+        train_data = LeafDataset(train=True)
     elif args.dataset == "pathfinder":
         data = PathFinder128Dataset("./data/pathfinder/", "128", difficulty="easy")
     elif args.dataset == "clevr":
@@ -1671,7 +1723,7 @@ def create_symbol_extractor(args, model):
         "bbh_shuffle7": bbh_shuffle7_settings,
         "folio": FOLIO_settings
     }
-    get_symbols, function = all_get_symbols[args.dataset](data, model)
+    get_symbols, function = all_get_symbols[args.dataset](train_data, model)
 
     return data, get_symbols, function
 
@@ -1824,6 +1876,9 @@ def main(args):
     # ).to("cuda:0")
     # processor = AutoProcessor.from_pretrained(args.model)
     if not args.use_hf and not "gemini" in args.model.lower() and not "gpt" in args.model.lower() and not "o1" in args.model.lower():
+        extra_args = {}
+        if "mistral" in args.model.lower():
+            extra_args = {"config_format": "mistral", "load_format": "mistral", "tokenizer_mode": "mistral"}
         model = LLM(
             model=args.model,
             max_model_len=12288,
@@ -1832,6 +1887,7 @@ def main(args):
             enforce_eager=True if "llama" in args.model.lower() else False,
             trust_remote_code=True,
             tensor_parallel_size=args.num_gpus,
+            **extra_args
         )
     elif "gemini" in args.model.lower() or "gpt" in args.model.lower() or "o1" in args.model.lower():
         model = APIModel(args.model)
@@ -1844,10 +1900,14 @@ def main(args):
     results = []
 
     # Select random subset of 200 samples
-    test_data_ids = list(range(100)) + list(range(103, len(data)))
+    test_data_ids = list(range(min(200, len(data)))) #+ list(range(103, len(data)))
     shuf = np.random.permutation(test_data_ids)
     test_data = [data[int(i)] for i in shuf[:200]]
     gt = [test_data[i][1] for i in range(len(test_data))]
+
+    # test_data = data
+    # gt = [test_data[i][1] for i in range(len(test_data))]
+    print(gt)
 
     # Run the NeSy task
     task = LLMNesy(get_symbols, function)
@@ -1876,7 +1936,7 @@ def main(args):
     # append to results file
     with open(f"logs/{('debug/' if args.debug else '') + model_name}/{args.dataset}/results.txt", "a") as f:
         f.write(
-            f"{('debug_' if args.debug else '') + model_name},{args.few_shot},{args.dataset},{acc}\n"
+            f"{('debug_' if args.debug else '') + model_name},{args.few_shot},{args.single_turn},{args.image_before},{args.dataset},{acc}\n"
         )
 
 
@@ -1896,6 +1956,8 @@ if __name__ == "__main__":
     args.add_argument("--debug", action="store_true")
     args.add_argument("--eval", action="store_true")
     args.add_argument("--few_shot", action="store_true")
+    args.add_argument("--single_turn", action="store_true", default=False)
+    args.add_argument("--image_before", action="store_true", default=False)
     args = args.parse_args()
 
     logger.info("Starting")

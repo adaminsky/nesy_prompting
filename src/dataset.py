@@ -22,6 +22,7 @@ import re
 import csv
 import ast
 from scipy.io import loadmat
+import pickle
 logger = logging.getLogger(__name__)
 
 
@@ -1300,7 +1301,7 @@ class GenClutrrDataset(torch.utils.data.Dataset):
     
 
 class ClutrrDataset(torch.utils.data.Dataset):
-    def __init__(self):
+    def __init__(self, train=False):
         # load jsonlines
         # self.data = load_dataset("CLUTRR/v1", "gen_train234_test2to10", split="test").to_list()
         self.data = []
@@ -1316,6 +1317,12 @@ class ClutrrDataset(torch.utils.data.Dataset):
 
         # subsample to 300
         print("Number of samples:", len(self.data))
+
+        if not train:
+            self.data = self.data[:100]
+        else:
+            # get remaining samples
+            self.data = self.data[100:]
         # random.seed(0)
         # self.data = random.sample(self.data, 300)
         
@@ -1342,7 +1349,7 @@ class ClutrrDataset(torch.utils.data.Dataset):
 
 
 class LeafDataset(torch.utils.data.Dataset):
-    def __init__(self, root="./"):
+    def __init__(self, root="./", train=False):
         # data is stored in a directory data/leaf-11 where each subdirectory is a class
         self.data = []
         for i, class_dir in enumerate(os.listdir(root + "data/leaf_11")):
@@ -1352,8 +1359,15 @@ class LeafDataset(torch.utils.data.Dataset):
                 self.data.append(([Image.open(img_path).convert("RGB")], label))
         
         # subsample to 200 samples
-        random.seed(0)
-        self.data = random.sample(self.data, 200)
+        np.random.seed(0)
+        shuf = np.random.permutation(len(self.data))
+        if not train:
+            # self.data = [self.data[i] for i in shuf[:200]]
+            self.data = pickle.load(open(root + "data/leaf_test.pkl", "rb"))
+        else:
+            # get remaining samples
+            self.data = [self.data[i] for i in shuf[200:]]
+
 
     def __getitem__(self, index):
         return self.data[index]
