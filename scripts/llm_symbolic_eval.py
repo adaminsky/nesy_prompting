@@ -18,6 +18,7 @@ from src.function_evaluation import python_eval
 from src.program_gen import ProgramSynthesisSolver, DSLOp
 import time
 import itertools
+import json
 import PIL
 from matplotlib import pyplot as plt
 from PIL import Image, ImageDraw, ImageFont
@@ -269,9 +270,14 @@ def get_task_predictions(task: LLMNesy, data, log=False, equiv=None):
                     [RawInput(image_input=None, text_input=d) for d in data[i][0]], return_symbols=True, print_log=log
                 )
             else:
-                out, symbols = task.apply(
-                    [RawInput(image_input=d, text_input=None) for d in data[i][0]], return_symbols=True, print_log=log
-                )
+                if len(data[i][0]) > 1 and type(data[i][0][1]) == list and len(data[i][0][1]) > 0 and type(data[i][0][1][0]) == dict:
+                    out, symbols = task.apply(
+                        [data[i][0][0], data[i][0][1]], return_symbols=True, print_log=log
+                    )
+                else:
+                    out, symbols = task.apply(
+                        [RawInput(image_input=d, text_input=None) for d in data[i][0]], return_symbols=True, print_log=log
+                    )
             logs.append((out, symbols))
             preds.append(out)
             if log:
@@ -803,6 +809,276 @@ def leaf_extract(data, model):
           if shape == 'elliptical': return 'Terminalia Arjuna'
           elif shape == 'lanceolate': return "Mangifera indica"
           else: return 'Syzygium cumini'
+
+    return parse, function
+
+
+def clevr_extract(data, model):
+    init_objects_examples = None
+    object_bbox_examples = None
+    if args.few_shot:
+        objs_100 = [
+                    ('cyan','cube','rubber','large'),
+                    ('yellow','cylinder','metal','small'),
+                    ('red','sphere','rubber','large'),
+                    ('gray','cylinder','rubber','small'),
+                    ('brown','cylinder','rubber','small'),
+                    ('brown','cylinder','metal','small'),
+                    ('brown','sphere','rubber','large'),
+                    ('cyan','cylinder','metal','small'),
+                    ('gray','sphere','rubber','small'),
+                    ('brown','cylinder','metal','large')
+        ]
+        bbox_100 = {
+                    ('cyan','cube','rubber','large'):(60,320-195,121,320-96),
+                    ('yellow','cylinder','metal','small'):(154,320-273,193,320-215),
+                    ('red','sphere','rubber','large'):(139,320-155,204,320-89),
+                    ('gray','cylinder','rubber','small'):(242,320-236,285,320-178),
+                    ('brown','cylinder','rubber','small'):(210,320-131,238,320-93),
+                    ('brown','cylinder','metal','small'):(231,320-97,257,320-66),
+                    ('brown','sphere','rubber','large'):(270,320-116,326,320-58),
+                    ('cyan','cylinder','metal','small'):(332,320-152,336,320-110),
+                    ('gray','sphere','rubber','small'):(319,320-194,357,320-156),
+                    ('brown','cylinder','metal','large'):(397,320-185,480,320-93)
+                }
+        objs_103 = [
+                    ('purple','cube','metal','large'),
+                    ('cyan','cylinder','rubber','small'),
+                    ('brown','sphere','metal','large'),
+                    ('brown','sphere','metal','large'),
+                    ('red','cylinder','metal','large'),
+                    ('cyan','cylinder','metal','large')
+        ]
+        bbox_103 = {
+                    ('purple','cube','metal','large'):(114,320-219,218,320-111),
+                    ('cyan','cylinder','rubber','small'):(186,320-124,216,320-105),
+                    ('brown','sphere','metal','large'):(195,320-105,244,320-53),
+                    ('brown','sphere','metal','large'):(288,320-131,280,320-73),
+                    ('red','cylinder','metal','large'):(262,320-173,330,320-87),
+                    ('cyan','cylinder','metal','large'):(365,320-191,448,320-98)
+                }
+        
+        init_objects_examples = IOExamples(
+            description=None,
+            inputs=[RawInput(image_input=data[100][0][0], text_input=None), RawInput(image_input=data[103][0][0], text_input=None)],
+            outputs=[objs_100, objs_103],
+        )
+        
+        object_bbox_examples = IOExamples(
+            description=None,
+            inputs=[RawInput(image_input=data[100][0][0], text_input=str(objs_100)), RawInput(image_input=data[103][0][0], text_input=str(objs_103))],
+            outputs=[bbox_100, bbox_103],
+        )
+        
+        
+    
+    init_objects_net = LLMNet(
+        model,
+        "an image of geometric objects",
+        "the extraction of all of the objects and each of their attributes.  Colors can be one of ['gray','green','blue','red','brown','purple','yellow','cyan']. Each shape can be one of ['cube','cylinder','sphere']. Material can be one of ['rubber','metal'].  Size can be one of ['small','large'].  Your final answer should be a list of tuples of shape (number of objects, number of attributes). The attributes should be organized as (color, shape, material, size).  For example, for an image with two objects, the final answer could look like: [('green','cube','metal','small'),('red','cylinder','rubber','large')].",
+        init_objects_examples
+    )
+    
+    object_bbox_net = LLMNet(
+        model,
+        "an image of geometric objects",
+        "the extraction of each object's bounding box given the attributes of each object. The format of the bounding box should be (x1,y1,x2,y2).  The final answer should look look like a dictionary; if you are given the image and the objects [('purple','cube','metal','large'),(cyan','cylinder','rubber','small')], your final answer should look something like {('purple','cube','metal','large'):(114,101,218,209),('cyan','cylinder','rubber','small'):(186,196,216,215)}. The image dimensions are (480,320).",
+        object_bbox_examples
+    )
+    
+    
+    def parse_data_from_string(s):
+        # Collapse multiple whitespace characters into a single space
+        cleaned_str = re.sub(r'\s+', ' ', s.strip())
+        # Safely evaluate the cleaned string into a Python object
+        return ast.literal_eval(cleaned_str)
+    
+    
+
+    def parse(img, program):
+        
+        try:
+            init_objects_s = init_objects_net.forward(RawInput(image_input=img,text_input=None))
+            init_objects = parse_data_from_string(init_objects_s)
+            scene_dict_s = object_bbox_net.forward(RawInput(image_input=img,text_input=str(init_objects)))
+            scene_dict = parse_data_from_string(scene_dict_s)
+            return [scene_dict, program]
+        except:
+            return [None, None]
+        
+    
+    def function(data, program):
+        """
+        data: a dict where each key is a list/tuple of attributes in order
+            [color, shape, material, size] and the value is the object's bbox.
+            For example:
+                {
+                    ('purple','cube','metal','large'): [114, 320-219, 218, 320-111],
+                    ('cyan','cylinder','rubber','small'): [186, 320-124, 216, 320-105],
+                    ...
+                }
+        program: a list of instructions (dictionaries) with keys:
+                - "inputs": list of indices referring to previous outputs
+                - "function": the function name to call
+                - "value_inputs": a list of constant values (e.g. a color or size)
+        The final output (the output of the last instruction) will be returned.
+        """
+        if not data:
+            return "-999"
+        # Preprocess the input scene data into a list of objects.
+        # Each object will have keys: color, shape, material, size, bbox, and a unique id.
+        scene_objs = []
+        obj_id = 0
+        for key, bbox in data.items():
+            # Ensure key is a list/tuple with [color, shape, material, size]
+            obj = {
+                "color": key[0],
+                "shape": key[1],
+                "material": key[2],
+                "size": key[3],
+                "bbox": bbox,  # assume bbox is a list like [x_min, y_min, x_max, y_max]
+                "id": obj_id
+            }
+            scene_objs.append(obj)
+            obj_id += 1
+
+        # We'll store each intermediate result in a list (memory),
+        # so that later instructions can refer to earlier ones by index.
+        memory = []
+
+        # ---------------- Helper Functions ----------------
+
+        def scene_fn():
+            # Return the full scene.
+            return scene_objs
+
+        def filter_color(objects, color):
+            return [obj for obj in objects if obj["color"] == color]
+
+        def filter_size(objects, size):
+            return [obj for obj in objects if obj["size"] == size]
+
+        def filter_material(objects, material):
+            return [obj for obj in objects if obj["material"] == material]
+
+        def filter_shape(objects, shape):
+            return [obj for obj in objects if obj["shape"] == shape]
+
+        def unique(objects):
+            if len(objects) == 1:
+                return objects[0]
+            raise ValueError("unique() expected exactly one object, but got {} objects.".format(len(objects)))
+
+        def query_color(obj):
+            return obj["color"]
+
+        def query_shape(obj):
+            return obj["shape"]
+
+        def query_material(obj):
+            return obj["material"]
+
+        def query_size(obj):
+            return obj["size"]
+
+        def same_size(obj):
+            # Return all objects in the scene that have the same size as obj (excluding obj itself)
+            return [o for o in scene_objs if o["size"] == obj["size"] and o["id"] != obj["id"]]
+
+        def same_material(obj):
+            return [o for o in scene_objs if o["material"] == obj["material"] and o["id"] != obj["id"]]
+
+        def same_shape(obj):
+            return [o for o in scene_objs if o["shape"] == obj["shape"] and o["id"] != obj["id"]]
+
+        def same_color(obj):
+            return [o for o in scene_objs if o["color"] == obj["color"] and o["id"] != obj["id"]]
+
+        def relate(obj, relation):
+            """
+            Given a reference object, return all objects in the scene that are in the given spatial relation.
+            For simplicity, we define:
+            - "left": object's center x < reference center x
+            - "right": object's center x > reference center x
+            - "front": object's center y > reference center y (i.e. lower on image)
+            - "behind": object's center y < reference center y
+            """
+            def center(o):
+                bbox = o["bbox"]
+                # Assuming bbox = [x_min, y_min, x_max, y_max]
+                return ((bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2)
+            ref_center = center(obj)
+            if relation == "left":
+                return [o for o in scene_objs if center(o)[0] < ref_center[0]]
+            elif relation == "right":
+                return [o for o in scene_objs if center(o)[0] > ref_center[0]]
+            elif relation == "front":
+                return [o for o in scene_objs if center(o)[1] > ref_center[1]]
+            elif relation == "behind":
+                return [o for o in scene_objs if center(o)[1] < ref_center[1]]
+            else:
+                raise ValueError("Unknown relation: " + relation)
+
+        def union(list1, list2):
+            # Return the union of two lists (removing duplicate objects based on id)
+            seen = set()
+            result = []
+            for obj in list1 + list2:
+                if obj["id"] not in seen:
+                    seen.add(obj["id"])
+                    result.append(obj)
+            return result
+
+        def intersect(list1, list2):
+            # Return the intersection of two lists (objects that appear in both, based on id)
+            set1 = {obj["id"] for obj in list1}
+            return [obj for obj in list2 if obj["id"] in set1]
+
+        def count_fn(objects):
+            return str(len(objects))
+
+        # Map program function names to our helper functions.
+        function_map = {
+            "scene": scene_fn,
+            "filter_color": filter_color,
+            "filter_size": filter_size,
+            "filter_material": filter_material,
+            "filter_shape": filter_shape,
+            "unique": unique,
+            "query_color": query_color,
+            "query_shape": query_shape,
+            "query_material": query_material,
+            "query_size": query_size,
+            "same_size": same_size,
+            "same_material": same_material,
+            "same_shape": same_shape,
+            "same_color": same_color,
+            "relate": relate,
+            "union": union,
+            "intersect": intersect,
+            "count": count_fn
+        }
+
+        # ---------------- Program Execution ----------------
+
+        # Execute each instruction in order.
+        for instruction in program:
+            # Get the outputs of prior instructions as specified by "inputs"
+            inputs = [memory[i] for i in instruction.get("inputs", [])]
+            func_name = instruction["function"]
+            val_inputs = instruction.get("value_inputs", [])
+            func = function_map.get(func_name)
+            if func is None:
+                raise ValueError("Unknown function: " + func_name)
+            # Call the function with the unpacked inputs and any constant value parameters.
+            # For example, filter_color(objects, 'purple') is called as:
+            # filter_color(*inputs, *val_inputs)
+            result = func(*inputs, *val_inputs)
+            memory.append(result)
+
+        # The output of the final instruction is our answer.
+        return memory[-1]
+
 
     return parse, function
 
@@ -1710,7 +1986,7 @@ def create_symbol_extractor(args, model):
         "svhn": svhn_extract,
         "hwf": hwf_extract,
         "clutrr": clutrr_extract,
-        "clevr": clevr_settings,
+        "clevr": clevr_extract,
         "leaf": leaf_extract,
         "pathfinder": pathfinder_extract,
         "chartqa": chartqa_settings,
@@ -1947,7 +2223,7 @@ if __name__ == "__main__":
     args = argparse.ArgumentParser()
     args.add_argument("--dataset", type=str, default="clevr")
     args.add_argument(
-        "--model", type=str, default="meta-llama/Llama-3.2-11B-Vision-Instruct"
+        "--model", type=str, default="Qwen/Qwen2.5-VL-72B-Instruct"
     )
     args.add_argument("--log", action="store_true")
     args.add_argument("--raw", action="store_true")
