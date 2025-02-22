@@ -87,7 +87,10 @@ class MNISTSumKOrigDataset(torch.utils.data.Dataset):
         labels = []
         for i in range(self.k):
             img, label = self.mnist[index * self.k + i]
-            imgs.append(img)
+            if type(img) == Image.Image:
+                imgs.append(img.convert("RGB"))
+            else:
+                imgs.append(img)
             labels.append(label)
         sum_label = sum(labels)
 
@@ -95,6 +98,35 @@ class MNISTSumKOrigDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.mnist) // self.k
+
+
+class MNISTHard(torch.utils.data.Dataset):
+    def __init__(self, root="./", transform=None):
+        self.root = root + "data/mnist_gemini_wrong/"
+        self.transform = transform
+        self.image_paths = []
+        self.labels = []
+
+        # Load all image paths and labels
+        for filename in os.listdir(self.root):
+            if filename.endswith(".jpg"):
+                self.image_paths.append(os.path.join(self.root, filename))
+                # Extract the label from the filename
+                label = int(filename.split('_')[-1].split('.')[0])
+                self.labels.append(label)
+
+    def __len__(self):
+        return len(self.image_paths)
+
+    def __getitem__(self, index):
+        img_path = self.image_paths[index]
+        label = self.labels[index]
+        img = Image.open(img_path).convert("RGB")
+
+        if self.transform:
+            img = self.transform(img)
+
+        return img, label
 
 
 class MNISTSumKDataset(torch.utils.data.Dataset):
@@ -1305,7 +1337,7 @@ class GenClutrrDataset(torch.utils.data.Dataset):
     
 
 class ClutrrDataset(torch.utils.data.Dataset):
-    def __init__(self, train=False):
+    def __init__(self, train=False, len=4):
         # load jsonlines
         # self.data = load_dataset("CLUTRR/v1", "gen_train234_test2to10", split="test").to_list()
         self.data = []
@@ -1313,7 +1345,7 @@ class ClutrrDataset(torch.utils.data.Dataset):
         #     for line in f:
         #         self.data.append(json.loads(line))
         # load from csv
-        with open("data/CLUTRR/clutrr_4.csv", "r") as f:
+        with open(f"data/CLUTRR/clutrr_{len}.csv", "r") as f:
             # read the first line to get the keys
             reader = csv.DictReader(f)
             for row in reader:

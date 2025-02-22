@@ -313,6 +313,8 @@ def sum2_extract(data, model):
         model,
         "an image of a handwritten digit",
         "the digit as an integer from 0 to 9",
+        # "the digit as an integer from 0 to 9. The number may be poorly written, but it is always right-side up and represents a single digit.",
+        # "the digit as an integer from 0 to 9. If it's unclear, please consider how all the numbers from 0-9 look and choose the one that best fits.",
         examples,
         few_shot=not args.single_turn,
         image_before_prompt=args.image_before
@@ -857,6 +859,14 @@ def clevr_extract(data, model):
                     ('red','cylinder','metal','large'):(262,320-173,330,320-87),
                     ('cyan','cylinder','metal','large'):(365,320-191,448,320-98)
                 }
+        # convert bbox to 1000x1000 from 480x320
+        bbox_100_new = []
+        bbox_103_new = []
+        for key in bbox_100:
+            bbox_100_new.append({"bbox_2d": (bbox_100[key][0]*1000//480, bbox_100[key][1]*1000//320, bbox_100[key][2]*1000//480, bbox_100[key][3]*1000//320), "attributes": key})
+        for key in bbox_103:
+            bbox_103_new.append({"bbox_2d": (bbox_103[key][0]*1000//480, bbox_103[key][1]*1000//320, bbox_103[key][2]*1000//480, bbox_103[key][3]*1000//320), "attributes": key})
+
         
         init_objects_examples = IOExamples(
             description=None,
@@ -866,8 +876,9 @@ def clevr_extract(data, model):
         
         object_bbox_examples = IOExamples(
             description=None,
-            inputs=[RawInput(image_input=data[100][0][0], text_input=str(objs_100)), RawInput(image_input=data[103][0][0], text_input=str(objs_103))],
-            outputs=[bbox_100, bbox_103],
+            # inputs=[RawInput(image_input=data[100][0][0], text_input=str(objs_100)), RawInput(image_input=data[103][0][0], text_input=str(objs_103))],
+            inputs=[RawInput(image_input=data[100][0][0], text_input=None), RawInput(image_input=data[103][0][0], text_input=None)],
+            outputs=[[bbox_100_new], [bbox_103_new]],
         )
         
         
@@ -875,21 +886,31 @@ def clevr_extract(data, model):
     init_objects_net = LLMNet(
         model,
         "an image of geometric objects",
-        "the extraction of all of the objects and each of their attributes.  Colors can be one of ['gray','green','blue','red','brown','purple','yellow','cyan']. Each shape can be one of ['cube','cylinder','sphere']. Material can be one of ['rubber','metal'].  Size can be one of ['small','large'].  Your final answer should be a list of tuples of shape (number of objects, number of attributes). The attributes should be organized as (color, shape, material, size).  For example, for an image with two objects, the final answer could look like: [('green','cube','metal','small'),('red','cylinder','rubber','large')].",
-        init_objects_examples
+        "all of the objects and each of their attributes. Colors can be one of ['gray','green','blue','red','brown','purple','yellow','cyan']. Each shape can be one of ['cube','cylinder','sphere']. Material can be one of ['rubber','metal']. Size can be one of ['small','large']. Your final answer should be a list of tuples of shape (number of objects, number of attributes). The attributes should be organized as (color, shape, material, size).  For example, for an image with two objects, the final answer could look like: [('green','cube','metal','small'),('red','cylinder','rubber','large')].",
+        init_objects_examples,
+        few_shot=not args.single_turn,
+        image_before_prompt=args.image_before
     )
     
     object_bbox_net = LLMNet(
         model,
         "an image of geometric objects",
-        "the extraction of each object's bounding box given the attributes of each object. The format of the bounding box should be (x1,y1,x2,y2).  The final answer should look look like a dictionary; if you are given the image and the objects [('purple','cube','metal','large'),(cyan','cylinder','rubber','small')], your final answer should look something like {('purple','cube','metal','large'):(114,101,218,209),('cyan','cylinder','rubber','small'):(186,196,216,215)}. The image dimensions are (480,320).",
-        object_bbox_examples
+        "each object's bounding box and attributes in the form {\"bbox_2d\": (x1, y1, x2, y2), \"attributes\": (color, shape, material, size)}. Colors can be one of ['gray','green','blue','red','brown','purple','yellow','cyan'], shapes can be one of ['cube','cylinder','sphere'], material can be one of ['rubber','metal'], and size can be one of ['small','large'].",
+        object_bbox_examples,
+        few_shot=not args.single_turn,
+        image_before_prompt=args.image_before
     )
     
     
     def parse_data_from_string(s):
+        if "```json" in s:
+            # Extract the JSON string from the code block
+            s = re.search(r'```json\s+(.*)\s+```', s, re.DOTALL).group(1)
+
         # Collapse multiple whitespace characters into a single space
         cleaned_str = re.sub(r'\s+', ' ', s.strip())
+
+        print("cleaned_str:", cleaned_str)
         # Safely evaluate the cleaned string into a Python object
         return ast.literal_eval(cleaned_str)
     
@@ -898,11 +919,17 @@ def clevr_extract(data, model):
     def parse(img, program):
         
         try:
-            init_objects_s = init_objects_net.forward(RawInput(image_input=img,text_input=None))
-            init_objects = parse_data_from_string(init_objects_s)
-            scene_dict_s = object_bbox_net.forward(RawInput(image_input=img,text_input=str(init_objects)))
+            # init_objects_s = init_objects_net.forward(RawInput(image_input=img,text_input=None))
+            # init_objects = parse_data_from_string(init_objects_s)
+            # scene_dict_s = object_bbox_net.forward(RawInput(image_input=img,text_input=str(init_objects)))
+            scene_dict_s = object_bbox_net.forward(RawInput(image_input=img,text_input=None))
             scene_dict = parse_data_from_string(scene_dict_s)
-            return [scene_dict, program]
+            scene_dict_processed = {}
+            for obj in scene_dict:
+                attr = obj["attributes"]
+                box = obj["bbox_2d"]
+                scene_dict_processed[tuple(attr)] = box
+            return [scene_dict_processed, program]
         except:
             return [None, None]
         
@@ -1960,6 +1987,7 @@ def create_symbol_extractor(args, model):
         data = PathFinder128Dataset("./data/pathfinder/", "128", difficulty="easy")
     elif args.dataset == "clevr":
         data = ClevrDataset(max_samples=500)
+        train_data = ClevrDataset(max_samples=500)
     elif args.dataset == "chartqa":
         data = ChartQADataset()
     elif args.dataset == "gsm8k":
@@ -2151,7 +2179,7 @@ def main(args):
     #     args.model, torch_dtype=torch.bfloat16
     # ).to("cuda:0")
     # processor = AutoProcessor.from_pretrained(args.model)
-    if not args.use_hf and not "gemini" in args.model.lower() and not "gpt" in args.model.lower() and not "o1" in args.model.lower():
+    if not args.use_hf and not "gemini" in args.model.lower() and not "gpt" in args.model.lower() and not "o3" in args.model.lower():
         extra_args = {}
         if "mistral" in args.model.lower():
             extra_args = {"config_format": "mistral", "load_format": "mistral", "tokenizer_mode": "mistral"}
@@ -2165,7 +2193,7 @@ def main(args):
             tensor_parallel_size=args.num_gpus,
             **extra_args
         )
-    elif "gemini" in args.model.lower() or "gpt" in args.model.lower() or "o1" in args.model.lower():
+    elif "gemini" in args.model.lower() or "gpt" in args.model.lower() or "o3" in args.model.lower():
         model = APIModel(args.model)
     else:
         model = OurLLM(model_name=args.model)

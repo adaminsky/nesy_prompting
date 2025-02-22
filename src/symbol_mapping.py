@@ -735,7 +735,9 @@ class LLMNet:
         prompt_content = []
         if self.examples is not None:
             for i, (ex_input, ex_output) in enumerate(zip(self.examples.inputs, self.examples.outputs)):
-                symbol_str = ", ".join([json.dumps(o).encode('utf-8').decode('unicode_escape') for o in ex_output])
+                # symbol_str = ", ".join([json.dumps(o).encode('utf-8').decode('unicode_escape') for o in ex_output])
+                # it should be loadable with ast.literal_eval
+                symbol_str = ", ".join([repr(o) for o in ex_output])
 
                 if i == 0:
                     prompt_content.append({"type": "text", "text": f"After examining the input, determine {self.output_desc}. Here are some examples:"})
@@ -768,7 +770,7 @@ class LLMNet:
                                 "type": "image_url",
                                 "image_url": {
                                     "url": f"data:image/jpeg;base64,{img2base64(ex_input.image_input)}",
-                                    "detail": "high"
+                                    "detail": "high",
                                 },
                             },
                         ]
@@ -780,7 +782,7 @@ class LLMNet:
                                 "type": "image_url",
                                 "image_url": {
                                     "url": f"data:image/jpeg;base64,{img2base64(ex_input.image_input)}",
-                                    "detail": "high"
+                                    "detail": "high",
                                 },
                             },
                             {
@@ -821,13 +823,17 @@ class LLMNet:
         elif input.text_input is None and input.image_input is not None:
             prompt_content.extend(
                 [
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img2base64(input.image_input)}", "detail": "high"}},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img2base64(input.image_input)}",
+                                                        "detail": "high",
+                                                        }},
                 ]
             )
         else:
             prompt_content.extend(
                 [
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img2base64(input.image_input)}", "detail": "high"}},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img2base64(input.image_input)}",
+                                                        "detail": "high",
+                                                        }},
                     {"type": "text", "text": input.text_input},
                 ]
             )
@@ -896,6 +902,8 @@ class LLMNet:
             else:
                 pred = output.strip()
 
+            if "```json" in pred:
+                pred = re.findall(r"```json(.*?)```", pred, *extra_args)[-1]
             if "```" in pred:
                 pred = re.sub(r"```", "", pred).strip()
             if "<|eot_id|>" in pred:
