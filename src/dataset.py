@@ -74,13 +74,16 @@ class MNISTSumKOrigDataset(torch.utils.data.Dataset):
         download=False,
         k=2,
         concatenate=False,
+        noise=0,
     ):
         self.mnist = torchvision.datasets.MNIST(
-            root, train, transform, target_transform, download
+            root, train, None, target_transform, download
         )
         self.train = train
         self.k = k
         self.concatenate = concatenate
+        self.noise = noise
+        self.transform = transform
 
     def __getitem__(self, index):
         imgs = []
@@ -88,8 +91,17 @@ class MNISTSumKOrigDataset(torch.utils.data.Dataset):
         for i in range(self.k):
             img, label = self.mnist[index * self.k + i]
             if type(img) == Image.Image:
-                imgs.append(img.convert("RGB"))
+                if self.noise > 0:
+                    np_img = np.array(img.convert("L"))
+                    np_img = np.clip(np_img + np.random.normal(size=np_img.shape, scale=self.noise), 0, 1) * 255
+                    img = Image.fromarray(np_img)
+                img = img.convert("RGB")
+                if self.transform:
+                    img = self.transform(img.convert("L"))
+                imgs.append(img)
             else:
+                if self.noise > 0:
+                    img = torch.clamp(img + torch.randn_like(img) * self.noise, 0, 1)
                 imgs.append(img)
             labels.append(label)
         sum_label = sum(labels)
@@ -163,11 +175,12 @@ class MNISTSumKDataset(torch.utils.data.Dataset):
 
 
 class HWFDataset(torch.utils.data.Dataset):
-    def __init__(self, root: str, split: str, length: int, concatenate=False):
+    def __init__(self, root: str, split: str, length: int, concatenate=False, transform=None):
         super(HWFDataset, self).__init__()
         self.root = root
         self.split = split
         self.concatenate = concatenate
+        self.transform = transform
         md = json.load(open(os.path.join(root, f"HWF/expr_{split}.json")))
 
         # finding only the metadata with length == 1
@@ -193,6 +206,8 @@ class HWFDataset(torch.utils.data.Dataset):
                 self.root, "HWF/Handwritten_Math_Symbols", img_path
             )
             img = Image.open(img_full_path).convert("RGB")
+            if self.transform:
+                img = self.transform(img.convert("L"))
             # img = self.img_transform(img)
             # print(img.shape)
             img_seq.append(img)
@@ -1301,10 +1316,10 @@ class SudokuDataset(torch.utils.data.Dataset):
 
 
 class GenClutrrDataset(torch.utils.data.Dataset):
-    def __init__(self):
+    def __init__(self, root="./"):
         # load jsonlines
         self.data = []
-        with open("data/CLUTRR/train.jsonl", "r") as f:
+        with open(root + "data/CLUTRR/train.jsonl", "r") as f:
             for line in f:
                 self.data.append(json.loads(line))
 
@@ -1330,14 +1345,19 @@ class GenClutrrDataset(torch.utils.data.Dataset):
         name_map = self.data[index]["name_map"]
         # query = f"How is {name_map[str(query[1])]} related to {name_map[str(query[0])]}?"
         query = (name_map[str(query[1])], name_map[str(query[0])])
-        return (context, query), self.data[index]["target_gender"], len(name_map), len(self.data[index]["descriptor"].split(","))
+
+        target = self.data[index]["target_gender"]
+        if target == "neice":
+            target = "niece"
+
+        return [story, query], target, len(self.data[index]["descriptor"].split(",")) #* len(name_map)
 
     def __len__(self):
         return len(self.data)
     
 
 class ClutrrDataset(torch.utils.data.Dataset):
-    def __init__(self, train=False, len=4):
+    def __init__(self, train=False, varied_complexity=False, root="./"):
         # load jsonlines
         # self.data = load_dataset("CLUTRR/v1", "gen_train234_test2to10", split="test").to_list()
         self.data = []
@@ -1345,17 +1365,32 @@ class ClutrrDataset(torch.utils.data.Dataset):
         #     for line in f:
         #         self.data.append(json.loads(line))
         # load from csv
-        with open(f"data/CLUTRR/clutrr_{len}.csv", "r") as f:
-            # read the first line to get the keys
-            reader = csv.DictReader(f)
-            for row in reader:
-                self.data.append({"question": row['story'], "answer": row['target'], "query": row['query']})
+        if varied_complexity:
+            for comp in range(4, 11):
+                with open(root + f"data/CLUTRR/clutrr_{comp}.csv", "r") as f:
+                    # read the first line to get the keys
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        self.data.append({"question": row['story'], "answer": row['target'], "query": row['query'], "complexity": comp})
+            # shuffle
+            np.random.seed(0)
+            self.data = np.random.permutation(self.data)
+        else:
+            with open(root + f"data/CLUTRR/clutrr_4.csv", "r") as f:
+                # read the first line to get the keys
+                reader = csv.DictReader(f)
+                for row in reader:
+                    self.data.append({"question": row['story'], "answer": row['target'], "query": row['query'], "complexity": 4})
 
         # subsample to 300
         print("Number of samples:", len(self.data))
 
-        if not train:
+        if not train and not varied_complexity:
             self.data = self.data[:100]
+        elif not train and varied_complexity:
+            self.data = self.data[:400]
+        elif train and varied_complexity:
+            self.data = self.data[400:]
         else:
             # get remaining samples
             self.data = self.data[100:]
@@ -1367,6 +1402,8 @@ class ClutrrDataset(torch.utils.data.Dataset):
         # # print histogram as text
         # print("Number of people histogram:")
         # print(np.histogram(num_people))
+        print("Complexity histogram:")
+        print(np.histogram([d["complexity"] for d in self.data], bins=range(4, 12)))
     
     def __getitem__(self, index):
         # story = self.data[index]["question"].split("\n")[0]
@@ -1378,7 +1415,7 @@ class ClutrrDataset(torch.utils.data.Dataset):
         # query = str(re.findall(r"\[(.*?)\]", query))
 
         # return (story, query), self.data[index]["answer"].split("#### ")[1]
-        return [story, query], self.data[index]["answer"]
+        return [story, query], self.data[index]["answer"], self.data[index]["complexity"]
 
     def __len__(self):
         return len(self.data)
@@ -1623,12 +1660,8 @@ def main():
     # d = LongSortDataset()
     # d = BlocksWorldDataset()
     # d = SudokuDataset()
-    d = ClutrrDataset()
-    print(d[10][0][0])
-    print(d[10][0][1])
-    print(d[10][0][2])
-    print()
-    print(d[10][1])
+    d = ClutrrDataset(train=False, varied_complexity=True)
+    print(d[0])
 
 
 if __name__ == "__main__":
