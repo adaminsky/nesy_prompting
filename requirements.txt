@@ -14,3 +14,4 @@ flash-attn
 vllm
 timeout-decorator
 py-sudoku
+ipywidgets
