@@ -15,3 +15,5 @@ vllm
 timeout-decorator
 py-sudoku
 ipywidgets
+ipykernel
+scikit-learn
