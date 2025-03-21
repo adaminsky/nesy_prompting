@@ -1,0 +1,15 @@
+gemini-2.0-flash,False,sum2,0.73
+gemini-2.0-flash,True,sum2,0.77
+gemini-2.0-flash,True,sum2,0.76
+gemini-2.0-flash,True,sum2,0.75
+gemini-2.0-flash,True,sum2,0.73
+gemini-2.0-flash,False,sum2,0.76
+gemini-2.0-flash,False,sum2,0.73
+gemini-2.0-flash,True,sum2,0.815
+gemini-2.0-flash,True,sum2,0.765
+gemini-2.0-flash,True,sum2,0.795
+gemini-2.0-flash,True,sum2,0.805
+gemini-2.0-flash,True,sum2,0.795
+gemini-2.0-flash,False,False,True,sum2,0.8
+gemini-2.0-flash,True,True,True,sum2,0.76
+gemini-2.0-flash,True,False,True,sum2,0.815
