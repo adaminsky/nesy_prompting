@@ -326,10 +326,12 @@ class ClevrDataset(torch.utils.data.Dataset):
         images_path="./data/CLEVR_v1.0/images/val/",
         scene_path="./data/CLEVR_v1.0/scenes/CLEVR_val_scenes.json",
         max_samples=None,
+        raw_data=False,
     ):
         self.images_path = images_path
         self.scene_path = scene_path
         self.max_samples = max_samples
+        self.raw_data = raw_data
 
         question_json = json.load(open(questions_path, "r"))
         if scene_path:
@@ -432,7 +434,10 @@ class ClevrDataset(torch.utils.data.Dataset):
             scene = self.all_scenes[index]
 
         # return (question, image, answer, program_seq, scene)
-        return ((image, program_seq), answer, (question, scene))
+        if self.raw_data:
+            return [image, question + " Colors can be one of ['gray','green','blue','red','brown','purple','yellow','cyan'], shapes can be one of ['cube','cylinder','sphere'], material can be one of ['rubber','metal'] (it is rubber if the finish is matte and metal if shiny), and size can be one of ['small','large']."], answer, scene
+        else:
+            return ((image, program_seq), answer, (question, scene))
 
     def __len__(self):
         if self.max_samples is None:
@@ -1357,10 +1362,11 @@ class GenClutrrDataset(torch.utils.data.Dataset):
     
 
 class ClutrrDataset(torch.utils.data.Dataset):
-    def __init__(self, train=False, varied_complexity=False, root="./"):
+    def __init__(self, train=False, varied_complexity=False, root="./", decomposed=True):
         # load jsonlines
         # self.data = load_dataset("CLUTRR/v1", "gen_train234_test2to10", split="test").to_list()
         self.data = []
+        self.decomposed = decomposed
         # with open("data/CLUTRR/test.jsonl", "r") as f:
         #     for line in f:
         #         self.data.append(json.loads(line))
@@ -1415,15 +1421,19 @@ class ClutrrDataset(torch.utils.data.Dataset):
         # query = str(re.findall(r"\[(.*?)\]", query))
 
         # return (story, query), self.data[index]["answer"].split("#### ")[1]
-        return [story, query], self.data[index]["answer"], self.data[index]["complexity"]
+        if self.decomposed:
+            return [story, query], self.data[index]["answer"], self.data[index]["complexity"]
+        else:
+            return (None, story + f" {query[0]} is {query[1]}'s what? The answer must be one of the following relationships: ['brother', 'sister', 'father', 'mother', 'son', 'daughter', 'grandfather', 'grandmother', 'uncle', 'aunt', 'nephew', 'niece', 'husband', 'wife', 'brother-in-law', 'sister-in-law', 'son-in-law', 'daughter-in-law', 'father-in-law', 'mother-in-law', 'grandson', 'granddaughter']. Please provide the answer in a single word."), self.data[index]["answer"], self.data[index]["complexity"]
 
     def __len__(self):
         return len(self.data)
 
 
 class LeafDataset(torch.utils.data.Dataset):
-    def __init__(self, root="./", train=False):
+    def __init__(self, root="./", train=False, raw_data=False):
         # data is stored in a directory data/leaf-11 where each subdirectory is a class
+        self.raw_data = raw_data
         self.data = []
         for i, class_dir in enumerate(os.listdir(root + "data/leaf_11")):
             for img_file in os.listdir(root + f"data/leaf_11/{class_dir}"):
@@ -1441,9 +1451,11 @@ class LeafDataset(torch.utils.data.Dataset):
             # get remaining samples
             self.data = [self.data[i] for i in shuf[200:]]
 
-
     def __getitem__(self, index):
-        return self.data[index]
+        if self.raw_data:
+            return [self.data[index][0][0], "What is the class of this leaf? It is one of the following: [Ocimum basilicum, Jatropha curcas, Platanus orientalis, Citrus limon, Pongamia Pinnata, Mangifera indica, Syzygium cumini, Psidium guajava, Alstonia Scholaris, Terminalia Arjuna, Punica granatum]."], self.data[index][1]
+        else:
+            return self.data[index]
 
     def __len__(self):
         return len(self.data)

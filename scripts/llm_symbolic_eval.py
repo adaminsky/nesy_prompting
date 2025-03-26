@@ -2123,8 +2123,8 @@ def create_symbol_extractor(args, model):
         data = HWFDataset(root="data", split="test", length=5)
         train_data = HWFDataset(root="data", split="train", length=5)
     elif args.dataset == "clutrr":
-        data = ClutrrDataset()
-        train_data = ClutrrDataset(train=True)
+        data = ClutrrDataset(varied_complexity=True)
+        train_data = ClutrrDataset(varied_complexity=True, train=True)
     elif args.dataset == "leaf":
         data = LeafDataset()
         train_data = LeafDataset(train=True)
