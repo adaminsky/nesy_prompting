@@ -1609,12 +1609,26 @@ Travel Plan:"""
         return len(self.data)
 
 
+class AIMEDataset(torch.utils.data.Dataset):
+    def __init__(self):
+        self.data = load_dataset("di-zhang-fdu/AIME_1983_2024", split="train")
+
+    def __getitem__(self, index):
+        query = self.data[index]["Question"]
+        answer = self.data[index]["Answer"]
+        return (None, query), answer
+
+    def __len__(self):
+        return len(self.data)
+
+
 class OmniMathDataset(torch.utils.data.Dataset):
     def __init__(
         self,
         split: str = "test",
         max_samples: Optional[int] = None,
-        allowed_difficulties: Optional[List[float]] = None
+        difficulty_low: Optional[float] = None,
+        difficulty_high: Optional[float] = None,
     ):
         """
         A Dataset wrapper around the Hugging Face dataset "KbsdJames/Omni-MATH".
@@ -1629,9 +1643,10 @@ class OmniMathDataset(torch.utils.data.Dataset):
         self.dataset = load_dataset("KbsdJames/Omni-MATH", split=split)
 
         # If allowed_difficulties is specified, filter the dataset
-        if allowed_difficulties is not None:
+        if difficulty_low is not None or difficulty_high is not None:
             self.dataset = self.dataset.filter(
-                lambda x: x["difficulty"] in allowed_difficulties
+                lambda x: (difficulty_low is None or x["difficulty"] >= difficulty_low) and 
+                           (difficulty_high is None or x["difficulty"] <= difficulty_high)
             )
 
         # Apply max_samples if specified
