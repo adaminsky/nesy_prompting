@@ -471,6 +471,73 @@ class ChartQADataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.data)
+    
+
+
+class BBEHDataset(torch.utils.data.Dataset):
+    def __init__(self, subtasks=None, split="all"):
+        """
+        Args:
+            subtasks (list of str, optional): List of allowed subtask names (e.g., ['linguini', 'sportqa']).
+                If None, all tasks are loaded.
+            split (str): One of "train", "test", or "all". 
+                - "train": Uses the first 3 samples.
+                - "test": Uses samples from index 3 onward.
+                - "all": Uses all available samples.
+        """
+        self.data = []
+        # Root directory where bbeh benchmark_tasks reside.
+        root_dir = '/home/nvelingker/unsupervised-nesy/bbeh/bbeh/benchmark_tasks'
+        
+        # Iterate over directories in the root_dir.
+        for entry in os.listdir(root_dir):
+            dir_path = os.path.join(root_dir, entry)
+            if os.path.isdir(dir_path) and entry.startswith("bbeh_"):
+                # The task name is the part after "bbeh_"
+                task_name = entry[5:]
+                # If a list of allowed subtasks is provided, only load those tasks.
+                if subtasks is not None and task_name not in subtasks:
+                    continue
+                
+                json_file = os.path.join(dir_path, "task.json")
+                if os.path.exists(json_file):
+                    with open(json_file, 'r') as f:
+                        task_data = json.load(f)
+                    # task_data should have a key "examples" which is a list of dicts.
+                    # Each example is expected to have "input" (question) and "target" (answer).
+                    self.data.extend(task_data.get("examples", []))
+                else:
+                    print(f"Warning: {json_file} does not exist. Skipping directory {entry}.")
+        if len(self.data) == 0:
+            raise RuntimeError("No data found.")
+
+        # Filter data based on the split parameter.
+        if split == "train":
+            self.data = self.data[:3]
+        elif split == "test":
+            self.data = self.data[3:]
+        elif split == "all":
+            pass
+        else:
+            raise ValueError("Invalid split value: must be one of 'train', 'test', or 'all'.")
+                    
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, index):
+        """
+        Returns:
+            A tuple of the form ((None, question), answer)
+            - None is a placeholder for an image (which is not present in this dataset).
+            - question is taken from the "input" field.
+            - answer is taken from the "target" field.
+        """
+        example = self.data[index]
+        question = example["input"]
+        answer = example["target"]
+        return (None, question), answer
+
+
 
 
 class BlocksWorldDataset(torch.utils.data.Dataset):
