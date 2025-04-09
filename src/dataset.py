@@ -475,7 +475,7 @@ class ChartQADataset(torch.utils.data.Dataset):
 
 
 class BBEHDataset(torch.utils.data.Dataset):
-    def __init__(self, subtasks=None, split="all"):
+    def __init__(self, subtasks=None, split="all", root="./"):
         """
         Args:
             subtasks (list of str, optional): List of allowed subtask names (e.g., ['linguini', 'sportqa']).
@@ -487,7 +487,7 @@ class BBEHDataset(torch.utils.data.Dataset):
         """
         self.data = []
         # Root directory where bbeh benchmark_tasks reside.
-        root_dir = '/home/nvelingker/unsupervised-nesy/bbeh/bbeh/benchmark_tasks'
+        root_dir = os.path.join(root, 'bbeh/bbeh/benchmark_tasks')
         
         # Iterate over directories in the root_dir.
         for entry in os.listdir(root_dir):
@@ -1693,9 +1693,8 @@ class OmniMathDataset(torch.utils.data.Dataset):
     def __init__(
         self,
         split: str = "test",
+        difficulty: Optional[int] = 1,
         max_samples: Optional[int] = None,
-        difficulty_low: Optional[float] = None,
-        difficulty_high: Optional[float] = None,
     ):
         """
         A Dataset wrapper around the Hugging Face dataset "KbsdJames/Omni-MATH".
@@ -1708,6 +1707,21 @@ class OmniMathDataset(torch.utils.data.Dataset):
         """
         # Load the specified split of the Omni-MATH dataset
         self.dataset = load_dataset("KbsdJames/Omni-MATH", split=split)
+
+        if difficulty == 1:
+            difficulty_low = 1
+            difficulty_high = 3
+        elif difficulty == 2:
+            difficulty_low = 3
+            difficulty_high = 5
+        elif difficulty == 3:
+            difficulty_low = 5
+            difficulty_high = 8
+        elif difficulty == 4:
+            difficulty_low = 8
+            difficulty_high = 10
+        else:
+            raise ValueError(f"Invalid difficulty: {difficulty}")
 
         # If allowed_difficulties is specified, filter the dataset
         if difficulty_low is not None or difficulty_high is not None:
