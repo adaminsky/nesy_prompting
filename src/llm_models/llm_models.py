@@ -117,15 +117,24 @@ class OurLLM:
 
 
 class APIModel:
-    def __init__(self, model_name):
-        self.model_name = model_name
+    def __init__(self, model_name, provider=None):
+        assert "claude" not in model_name or provider is not None, "Provider must be specified for Claude models. Can be 'anthropic' or 'bedrock'."
         if "gemini" in model_name:
+            provider = "google"
+        elif provider is None:
+            provider = "openai"
+
+        assert provider in ["google", "openai", "bedrock", "anthropic"], "Provider must be one of 'google', 'openai', 'bedrock', or 'anthropic'."
+        self.provider = provider
+
+        self.model_name = model_name
+        if provider in ["google", "openai"]:
             self.client = OpenAI(
-                # api_key="***REMOVED***", #Adam
-                api_key="***REMOVED***", #Neelay
-                base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+                api_key="***REMOVED***" if provider == "google" else "***REMOVED***", #Adam
+                # api_key="***REMOVED***", #Neelay
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/" if provider == "google" else None
             )
-        elif "claude" in model_name:
+        elif provider == "bedrock":
             config = Config(
                 read_timeout=300,      # Increase read timeout to 300 seconds (adjust as needed)
                 connect_timeout=60,    # Optionally increase the connection timeout too
@@ -134,15 +143,19 @@ class APIModel:
                     'mode': 'standard'
                 }
             )
-
             self.client = boto3.client("bedrock-runtime", region_name="us-east-1", config=config)
+        elif provider == "anthropic":
+            self.client = anthropic.Anthropic(
+                api_key="***REMOVED***"
+            )
         else:
             self.client = OpenAI(
                 api_key="***REMOVED***"
+                # api_key="***REMOVED***"
             )
 
     def chat(self, prompt, sampling_params, use_tqdm):
-        if "claude" in self.model_name:
+        if self.provider == "bedrock":
             native_request = {
                 "messages": prompt,
                 "max_tokens": 131072,
@@ -167,14 +180,40 @@ class APIModel:
                         time.sleep(180)
                     else:
                         raise e
-        else:
+        elif self.provider == "anthropic":
+            response = self.client.messages.create(
+                model=self.model_name,
+                messages=prompt,
+                temperature=0.0,
+                max_tokens=2500,
+                top_p=1.0,
+            )
+        elif self.provider == "google":
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=prompt,
                 temperature=sampling_params.temperature,
-                max_tokens=5000,
+                max_tokens=10000,
                 top_p=1.0,
                 n=sampling_params.n,
+            )
+        else:
+            assert self.provider in ["openai"]
+            extra_args = {}
+            if "o3" in self.model_name:
+                extra_args["reasoning_effort"] = "medium"
+                extra_args["max_completion_tokens"] = 10000
+                extra_args["n"] = sampling_params.n
+            else:
+                extra_args["max_completion_tokens"] = 10000
+                extra_args["n"] = sampling_params.n
+                extra_args["temperature"] = sampling_params.temperature
+                extra_args["top_p"] = 1.0
+
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=prompt,
+                **extra_args
             )
         class Outputs:
             def __init__(self, outputs):
@@ -185,16 +224,20 @@ class APIModel:
                 self.text = text
 
         # print number of tokens
-        if "claude" in self.model_name:
+        if self.provider == "bedrock":
             response_body = json.loads(response["body"].read())
             # Claude 3 has a 'usage' field with input/output token counts
             print("Prompt tokens:", response_body['usage']['input_tokens'])
             print("Response tokens:", response_body['usage']['output_tokens'])
             response_text = response_body["content"][0]["text"]
             return [Outputs([Text(response_text)])]
+        elif self.provider == "anthropic":
+            print("Prompt tokens:", response.usage.input_tokens)
+            print("Response tokens:", response.usage.output_tokens)
+            response = response.content[0].text
+            return [Outputs([Text(response)])]
         else:
             print("Prompt tokens:", response.usage.prompt_tokens)
             print("Response tokens:", response.usage.completion_tokens)
-
         
         return [Outputs([Text(response.choices[i].message.content) for i in range(sampling_params.n)])] 

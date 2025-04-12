@@ -44,11 +44,11 @@ def run_with_timeout(code, timeout, code_context=None):
             with redirect_stdout(f):
                 exec(code, locs, locs)  # Execute the code with locs as locals
             if "answer" in locs:
-                queue.put(locs.get("answer", None))  # Retrieve the value of "answer"
+                queue.put((locs.get("answer", None), f.getvalue()))  # Retrieve the value of "answer"
             else:
-                queue.put(f.getvalue())  # Retrieve the output
+                queue.put((None, f.getvalue()))  # Retrieve the output
         except Exception as e:
-            queue.put(f"Error: {e}")
+            queue.put((f"Error: {e}", f.getvalue()))
 
     queue = multiprocessing.Queue()  # Queue for communication
     process = multiprocessing.Process(target=target, args=(queue,))
@@ -58,18 +58,16 @@ def run_with_timeout(code, timeout, code_context=None):
     if process.is_alive():
         process.terminate()
         process.join()
-        return None, "Error: Code execution timed out"
+        return None, "", "Error: Code execution timed out"
 
     # Retrieve result from the queue
     errors = None
     if not queue.empty():
         result = queue.get()
-        if isinstance(result, str) and result.startswith("Error:"):
-            # print(result)  # Print error if there is one
-            errors = result
-        else:
-            return result, None  # Return the value of "answer"
-    return None, errors
+        errors = result[1]
+
+        return result[0], result[1], errors  # Return the value of "answer" and the output
+    return None, "", errors
 
 
 def python_eval(code: str, code_context: str=None):
@@ -93,4 +91,4 @@ def python_eval(code: str, code_context: str=None):
         # return locs["answer"]
     except Exception as e:
         print("Exception:", e)
-        return "None"
+        return "None", "", str(e)
