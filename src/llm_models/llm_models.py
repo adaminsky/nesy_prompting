@@ -6,6 +6,8 @@ import boto3
 from botocore.config import Config
 from openai import OpenAI
 import anthropic
+from google import genai
+from google.genai import types
 from transformers import (
     AutoProcessor,
     AutoModelForCausalLM,
@@ -14,6 +16,8 @@ from transformers import (
 )
 from src.utils import base642img, RawInput, IOExamples
 
+AI4CODE_OAI_KEY = "***REMOVED***"
+BRACHIO_OAI_KEY = "***REMOVED***"
 
 class OurLLM:
     def __init__(self, model_name):
@@ -120,20 +124,25 @@ class APIModel:
     def __init__(self, model_name, provider=None):
         assert "claude" not in model_name or provider is not None, "Provider must be specified for Claude models. Can be 'anthropic' or 'bedrock'."
         if "gemini" in model_name:
-            provider = "google"
+            if "codeinterpreter" in model_name:
+                provider = "google-genai"
+            else:
+                provider = "google"
         elif provider is None:
             provider = "openai"
 
-        assert provider in ["google", "openai", "bedrock", "anthropic"], "Provider must be one of 'google', 'openai', 'bedrock', or 'anthropic'."
+        assert provider in ["google", "google-genai", "openai", "bedrock", "anthropic"], "Provider must be one of 'google', 'openai', 'bedrock', or 'anthropic'."
         self.provider = provider
 
         self.model_name = model_name
         if provider in ["google", "openai"]:
             self.client = OpenAI(
-                api_key="***REMOVED***" if provider == "google" else "***REMOVED***", #Adam
+                api_key="***REMOVED***" if provider == "google" else AI4CODE_OAI_KEY,
                 # api_key="***REMOVED***", #Neelay
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/" if provider == "google" else None
             )
+        elif provider == "google-genai":
+            self.client = genai.Client(api_key="***REMOVED***")
         elif provider == "bedrock":
             config = Config(
                 read_timeout=300,      # Increase read timeout to 300 seconds (adjust as needed)
@@ -150,7 +159,7 @@ class APIModel:
             )
         else:
             self.client = OpenAI(
-                api_key="***REMOVED***"
+                api_key=AI4CODE_OAI_KEY,
                 # api_key="***REMOVED***"
             )
 
@@ -197,6 +206,75 @@ class APIModel:
                 top_p=1.0,
                 n=sampling_params.n,
             )
+        elif self.provider == "google-genai":
+            # convert the prompt from the openai format to the google genai format
+            genai_contents = []
+            for message in prompt:
+                role = message["role"]
+                content = message["content"]
+
+                # Handle different content types
+                if isinstance(content, str):
+                    # Simple text content
+                    genai_contents.append(
+                        types.Content(
+                            role=role,
+                            parts=[types.Part(text=content)]
+                        )
+                    )
+                elif isinstance(content, list):
+                    # Content with multiple parts (text, images, etc.)
+                    parts = []
+                    for item in content:
+                        if item["type"] == "text":
+                            parts.append(types.Part(text=item["text"]))
+                        elif item["type"] == "image_url":
+                            # Handle image URLs
+                            img_url = item["image_url"]["url"]
+
+                            # Check if it's a base64 encoded image
+                            if img_url.startswith("data:image"):
+                                # Extract the base64 part
+                                base64_data = img_url.split(",")[1]
+
+                                # Create an inline data part
+                                parts.append(
+                                    types.Part(
+                                        inline_data=types.Blob(
+                                            mime_type="image/jpeg",  # Default to JPEG, adjust if needed
+                                            data=base64_data
+                                        )
+                                    )
+                                )
+                            else:
+                                # It's a regular URL
+                                parts.append(
+                                    types.Part(
+                                        file_data=types.FileData(
+                                            file_uri=img_url,
+                                            mime_type="image/jpeg"  # Default to JPEG, adjust if needed
+                                        )
+                                    )
+                                )
+                    if parts:  # Only add if we have parts
+                        genai_contents.append(
+                            types.Content(
+                                role=role,
+                                parts=parts
+                            )
+                        )
+
+            response = self.client.models.generate_content(
+                model=self.model_name.replace("-codeinterpreter", ""),
+                contents=genai_contents,
+                config=types.GenerateContentConfig(
+                    tools=[types.Tool(
+                        code_execution=types.ToolCodeExecution
+                    )],
+                    temperature=sampling_params.temperature,
+                    max_output_tokens=10000,
+                )
+            )
         else:
             assert self.provider in ["openai"]
             extra_args = {}
@@ -236,8 +314,51 @@ class APIModel:
             print("Response tokens:", response.usage.output_tokens)
             response = response.content[0].text
             return [Outputs([Text(response)])]
+        elif self.provider == "google-genai":
+            # Extract token counts if available
+            if response.usage_metadata is not None:
+                print("Prompt tokens:", response.usage_metadata.prompt_token_count)
+                print("Response tokens:", response.usage_metadata.candidates_token_count)
+            else:
+                print("Token counts not available for Google GenAI response")
+
+            # Extract the response text and code execution results
+            response_text = ""
+            code_execution_results = []
+
+            if response.candidates is not None:
+                for candidate in response.candidates:
+                    if candidate.content is not None:
+                        for part in candidate.content.parts:
+                            if part.text is not None:
+                                response_text += part.text
+
+                            if part.executable_code is not None:
+                                executable_code = part.executable_code
+                                if executable_code.code is not None:
+                                    code_execution_results.append({
+                                        'code': executable_code.code,
+                                    })
+
+                            # Check for code execution results
+                            if part.code_execution_result is not None:
+                                code_result = part.code_execution_result
+                                if code_result.output is not None:
+                                    code_execution_results.append({
+                                        'output': code_result.output,
+                                    })
+
+            # Combine text and code execution results
+            final_response = response_text
+            if code_execution_results:
+                for i, result in enumerate(code_execution_results):
+                    if "code" in result:
+                        final_response += f"Code:\n{result['code']}\n"
+                    if "output" in result:
+                        final_response += f"Output:\n{result['output']}\n"
+            return [Outputs([Text(final_response)])]
         else:
             print("Prompt tokens:", response.usage.prompt_tokens)
             print("Response tokens:", response.usage.completion_tokens)
-        
+
         return [Outputs([Text(response.choices[i].message.content) for i in range(sampling_params.n)])] 

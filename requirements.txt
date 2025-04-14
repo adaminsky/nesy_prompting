@@ -17,3 +17,4 @@ py-sudoku
 ipywidgets
 ipykernel
 scikit-learn
+google-genai
