@@ -163,6 +163,32 @@ class APIModel:
                 # api_key="***REMOVED***"
             )
 
+    def _create_completion_with_retry(self, model, messages, max_attempts=5, delay_seconds=2, **kwargs):
+        """Calls chat.completions.create with retry logic."""
+        response = None
+        last_exception = None
+        for attempt in range(max_attempts):
+            try:
+                response = self.client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    **kwargs
+                )
+                return response # Return response on success
+            except Exception as e:
+                last_exception = e
+                if attempt < max_attempts - 1:
+                    print(f"Encountered {e.__class__.__name__} on attempt {attempt+1}/{max_attempts}. Waiting {delay_seconds} seconds before retrying...")
+                    time.sleep(delay_seconds)
+                else:
+                    print(f"API call failed after {max_attempts} attempts for model {model}.")
+                    raise last_exception # Re-raise the exception after the last attempt
+        # This part should ideally not be reached if max_attempts > 0
+        # but added for completeness in case max_attempts is 0 or negative.
+        if last_exception:
+            raise last_exception
+        return None # Should not happen with positive attempts
+
     def chat(self, prompt, sampling_params, use_tqdm):
         if self.provider == "bedrock":
             native_request = {
@@ -198,7 +224,7 @@ class APIModel:
                 top_p=1.0,
             )
         elif self.provider == "google":
-            response = self.client.chat.completions.create(
+            response = self._create_completion_with_retry(
                 model=self.model_name,
                 messages=prompt,
                 temperature=sampling_params.temperature,
@@ -288,11 +314,12 @@ class APIModel:
                 extra_args["temperature"] = sampling_params.temperature
                 extra_args["top_p"] = 1.0
 
-            response = self.client.chat.completions.create(
+            response = self._create_completion_with_retry(
                 model=self.model_name,
                 messages=prompt,
                 **extra_args
             )
+
         class Outputs:
             def __init__(self, outputs):
                 self.outputs = outputs
@@ -361,4 +388,4 @@ class APIModel:
             print("Prompt tokens:", response.usage.prompt_tokens)
             print("Response tokens:", response.usage.completion_tokens)
 
-        return [Outputs([Text(response.choices[i].message.content) for i in range(sampling_params.n)])] 
+            return [Outputs([Text(response.choices[i].message.content) for i in range(sampling_params.n)])]

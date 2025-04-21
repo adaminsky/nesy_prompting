@@ -914,3 +914,106 @@ class LLMNet:
             return pred
         except Exception:
             return "None"
+
+
+class PromptedLLM:
+    def __init__(self, model: LLM, prompt: str) -> str:
+        self.model = model
+        self.prompt = prompt
+
+    def forward(self, input: RawInput) -> str:
+        prompt = []
+
+        # Adding any the examples to the prompt
+        prompt_content = []
+        prompt_content.append({"type": "text", "text": self.prompt + "\nAt the end of your response, output just the answer after 'FINAL ANSWER:'."})
+
+        # Adding the input to the prompt (text or image)
+        if input.text_input is not None and input.image_input is None:
+            prompt_content.append({"type": "text", "text": input.text_input})
+        elif input.text_input is None and input.image_input is not None:
+            prompt_content.extend(
+                [
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img2base64(input.image_input)}",
+                                                        "detail": "high",
+                                                        }},
+                ]
+            )
+        else:
+            prompt_content.extend(
+                [
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img2base64(input.image_input)}",
+                                                        "detail": "high",
+                                                        }},
+                    {"type": "text", "text": input.text_input},
+                ]
+            )
+        
+        prompt.append({"role": "user", "content": prompt_content})
+        # prompt = [{"role": "user", "content": prompt_content}]
+
+        sampling_params = SamplingParams(temperature=0.0, max_tokens=5000, top_p=1.0)
+        output = (
+            self.model.chat(prompt, sampling_params=sampling_params, use_tqdm=False)[0]
+            .outputs[0]
+            .text
+        )
+        print("out:", output)
+
+        extra_args = [re.DOTALL]
+        try:
+            if "\\[ \\boxed{" in output:
+                res = re.findall(r"\[ \\boxed{(.*)}", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "**FINAL ANSWER:**" in output:
+                res = re.findall(r"\*\*FINAL ANS.*:\*\*(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "*FINAL ANSWER:*" in output:
+                res = re.findall(r"\*FINAL ANS.*:(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "**Final Answer:**" in output:
+                res = re.findall(r"\*\*Final Ans.*:\*\*(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "*Final Answer:*" in output:
+                res = re.findall(r"\*Final Ans.*:(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "Final answer:" in output:
+                res = re.findall(r"Final ans.*:(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "*Final answer:*" in output:
+                res = re.findall(r"\*Final ans.*:(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "**Final answer:**" in output:
+                res = re.findall(r"\*\*Final ans.*:\*\*(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "**Answer:**" in output:
+                res = re.findall(r"\*\*Answer:\*\*(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "*Answer:*" in output:
+                res = re.findall(r"\*Answer:\*(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "**Answer**:" in output:
+                res = re.findall(r"\*\*Answer\*\*:(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "*Answer*:" in output:
+                res = re.findall(r"\*Answer\*:(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "FINAL ANSWER:" in output:
+                # print("here", re.findall(r"FINAL ANS.*:(.*)(?:<|$)", output, *extra_args))
+                res = re.findall(r"FINAL ANSWER:(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            else:
+                pred = output.strip()
+
+            if "```json" in pred:
+                pred = re.findall(r"```json(.*?)```", pred, *extra_args)[-1]
+            if "```" in pred:
+                pred = re.sub(r"```", "", pred).strip()
+            if "<|eot_id|>" in pred:
+                pred = re.sub(r"<\|eot_id\|>", "", pred).strip()
+            if "\\text{" in pred:
+                res = re.findall(r"\\text{(.*?)}", pred, *extra_args)[-1]
+                pred = res.strip()
+            return pred
+        except Exception:
+            return "None"
