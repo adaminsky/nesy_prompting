@@ -137,8 +137,8 @@ class APIModel:
         self.model_name = model_name
         if provider in ["google", "openai"]:
             self.client = OpenAI(
-                api_key="***REMOVED***" if provider == "google" else AI4CODE_OAI_KEY,
-                # api_key="***REMOVED***", #Neelay
+                # api_key="***REMOVED***" if provider == "google" else AI4CODE_OAI_KEY,
+                api_key="***REMOVED***", #Neelay
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/" if provider == "google" else None
             )
         elif provider == "google-genai":
