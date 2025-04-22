@@ -14,33 +14,38 @@ from transformers import (
     AutoTokenizer,
     MllamaForCausalLM,
 )
+from dotenv import load_dotenv  # Add this import
+
 from src.utils import base642img, RawInput, IOExamples
 
-AI4CODE_OAI_KEY = "***REMOVED***"
-BRACHIO_OAI_KEY = "***REMOVED***"
+load_dotenv()  # Load variables from .env file
 
 class OurLLM:
     def __init__(self, model_name):
         self.model_name = model_name
+        hf_token = os.getenv("HF_TOKEN")
+        if not hf_token:
+            raise ValueError("HF_TOKEN environment variable not set")
+
         if "Llama-3.2" in model_name:
             self.model = MllamaForCausalLM.from_pretrained(
                 model_name,
                 torch_dtype="auto",
                 device_map="auto",
-                token="***REMOVED***",
+                token=hf_token,
             )
             self.processor = AutoProcessor.from_pretrained(
-                model_name, token="***REMOVED***"
+                model_name, token=hf_token
             )
         elif "Llama-3.3" in model_name:
             self.model = AutoModelForCausalLM.from_pretrained(
                 model_name,
                 torch_dtype="auto",
                 device_map="auto",
-                token="***REMOVED***",
+                token=hf_token,
             )
             self.processor = AutoTokenizer.from_pretrained(
-                model_name, token="***REMOVED***"
+                model_name, token=hf_token
             )
         elif "Qwen" in model_name:
             self.model = AutoModelForCausalLM.from_pretrained(
@@ -48,10 +53,10 @@ class OurLLM:
                 torch_dtype="auto",
                 device_map="auto",
                 attn_implementation="flash_attention_2",
-                token="***REMOVED***",
+                token=hf_token,
             )
             self.processor = AutoTokenizer.from_pretrained(
-                model_name, token="***REMOVED***"
+                model_name, token=hf_token
             )
 
     def chat(self, prompt, sampling_params, use_tqdm):
@@ -136,13 +141,28 @@ class APIModel:
 
         self.model_name = model_name
         if provider in ["google", "openai"]:
+            if provider == "google":
+                google_api_key = os.getenv("GOOGLE_API_KEY")
+                if not google_api_key:
+                    raise ValueError("GOOGLE_API_KEY environment variable not set for Google provider")
+                api_key = google_api_key
+                base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+            else: # openai
+                openai_api_key = os.getenv("OAI_API_KEY")
+                if not openai_api_key:
+                    raise ValueError("OAI_API_KEY environment variable not set for OpenAI provider")
+                api_key = openai_api_key
+                base_url = None
+
             self.client = OpenAI(
-                # api_key="***REMOVED***" if provider == "google" else AI4CODE_OAI_KEY,
-                api_key="***REMOVED***", #Neelay
-                base_url="https://generativelanguage.googleapis.com/v1beta/openai/" if provider == "google" else None
+                api_key=api_key,
+                base_url=base_url
             )
         elif provider == "google-genai":
-            self.client = genai.Client(api_key="***REMOVED***")
+            google_genai_api_key = os.getenv("GOOGLE_GENAI_API_KEY")
+            if not google_genai_api_key:
+                raise ValueError("GOOGLE_GENAI_API_KEY environment variable not set for Google GenAI provider")
+            self.client = genai.Client(api_key=google_genai_api_key)
         elif provider == "bedrock":
             config = Config(
                 read_timeout=300,      # Increase read timeout to 300 seconds (adjust as needed)
@@ -154,13 +174,18 @@ class APIModel:
             )
             self.client = boto3.client("bedrock-runtime", region_name="us-east-1", config=config)
         elif provider == "anthropic":
+            anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+            if not anthropic_api_key:
+                raise ValueError("ANTHROPIC_API_KEY environment variable not set for Anthropic provider")
             self.client = anthropic.Anthropic(
-                api_key="***REMOVED***"
+                api_key=anthropic_api_key
             )
         else:
+            openai_api_key = os.getenv("OAI_API_KEY")
+            if not openai_api_key:
+                raise ValueError("OPENAI_API_KEY environment variable not set")
             self.client = OpenAI(
-                api_key=AI4CODE_OAI_KEY,
-                # api_key="***REMOVED***"
+                api_key=openai_api_key,
             )
 
     def _create_completion_with_retry(self, model, messages, max_attempts=5, delay_seconds=2, **kwargs):
