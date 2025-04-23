@@ -413,4 +413,7 @@ class APIModel:
             print("Prompt tokens:", response.usage.prompt_tokens)
             print("Response tokens:", response.usage.completion_tokens)
 
-            return [Outputs([Text(response.choices[i].message.content) for i in range(sampling_params.n)])]
+            if response.usage.completion_tokens > 0:
+                return [Outputs([Text(response.choices[i].message.content) for i in range(sampling_params.n)])]
+            else:
+                return [Outputs([Text("") for i in range(sampling_params.n)])]
