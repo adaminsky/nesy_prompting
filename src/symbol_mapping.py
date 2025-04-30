@@ -921,7 +921,7 @@ class PromptedLLM:
         self.model = model
         self.prompt = prompt
 
-    def forward(self, input: RawInput) -> str:
+    def forward(self, input: RawInput, temp=0.0) -> str:
         prompt = []
 
         # Adding any the examples to the prompt
@@ -952,7 +952,7 @@ class PromptedLLM:
         prompt.append({"role": "user", "content": prompt_content})
         # prompt = [{"role": "user", "content": prompt_content}]
 
-        sampling_params = SamplingParams(temperature=0.0, max_tokens=5000, top_p=1.0)
+        sampling_params = SamplingParams(temperature=temp, max_tokens=5000, top_p=1.0)
         output = (
             self.model.chat(prompt, sampling_params=sampling_params, use_tqdm=False)[0]
             .outputs[0]

@@ -248,15 +248,6 @@ class APIModel:
                 max_tokens=2500,
                 top_p=1.0,
             )
-        elif self.provider == "google":
-            response = self._create_completion_with_retry(
-                model=self.model_name,
-                messages=prompt,
-                temperature=sampling_params.temperature,
-                max_tokens=10000,
-                top_p=1.0,
-                n=sampling_params.n,
-            )
         elif self.provider == "google-genai":
             # convert the prompt from the openai format to the google genai format
             genai_contents = []
@@ -327,9 +318,9 @@ class APIModel:
                 )
             )
         else:
-            assert self.provider in ["openai"]
+            assert self.provider in ["openai", "google"]
             extra_args = {}
-            if "o3" in self.model_name:
+            if "o3" in self.model_name or "o4" in self.model_name or "gemini-2.5" in self.model_name:
                 extra_args["reasoning_effort"] = "medium"
                 extra_args["max_completion_tokens"] = 10000
                 extra_args["n"] = sampling_params.n
