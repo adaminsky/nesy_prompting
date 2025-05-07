@@ -159,10 +159,10 @@ class APIModel:
                 base_url=base_url
             )
         elif provider == "google-genai":
-            google_genai_api_key = os.getenv("GOOGLE_GENAI_API_KEY")
+            google_genai_api_key = os.getenv("GOOGLE_API_KEY")
             if not google_genai_api_key:
-                raise ValueError("GOOGLE_GENAI_API_KEY environment variable not set for Google GenAI provider")
-            self.client = genai.Client(api_key=google_genai_api_key)
+                raise ValueError("GOOGLE_API_KEY environment variable not set for Google GenAI provider")
+            self.client = genai.Client(api_key=google_genai_api_key, http_options=types.HttpOptions(timeout=60*1000))
         elif provider == "bedrock":
             config = Config(
                 read_timeout=300,      # Increase read timeout to 300 seconds (adjust as needed)
@@ -392,13 +392,14 @@ class APIModel:
                                     })
 
             # Combine text and code execution results
-            final_response = response_text
+            final_response = ""
             if code_execution_results:
                 for i, result in enumerate(code_execution_results):
                     if "code" in result:
                         final_response += f"Code:\n{result['code']}\n"
                     if "output" in result:
                         final_response += f"Output:\n{result['output']}\n"
+            final_response += response_text
             return [Outputs([Text(final_response)])]
         else:
             print("Prompt tokens:", response.usage.prompt_tokens)
