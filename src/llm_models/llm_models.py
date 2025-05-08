@@ -18,7 +18,7 @@ from dotenv import load_dotenv  # Add this import
 
 from src.utils import base642img, RawInput, IOExamples
 
-load_dotenv()  # Load variables from .env file
+load_dotenv(override=True)  # Load variables from .env file
 
 class OurLLM:
     def __init__(self, model_name):
@@ -402,7 +402,10 @@ class APIModel:
             return [Outputs([Text(final_response)])]
         else:
             print("Prompt tokens:", response.usage.prompt_tokens)
-            print("Response tokens:", response.usage.completion_tokens)
+            try:
+                print("Reasoning tokens:", response.usage.total_tokens - response.usage.completion_tokens - response.usage.prompt_tokens)
+            finally:
+                print("Response tokens:", response.usage.completion_tokens)
 
             if response.usage.completion_tokens > 0:
                 return [Outputs([Text(response.choices[i].message.content) for i in range(sampling_params.n)])]
