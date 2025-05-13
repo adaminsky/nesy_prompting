@@ -147,6 +147,10 @@ class APIModel:
                     raise ValueError("GOOGLE_API_KEY environment variable not set for Google provider")
                 api_key = google_api_key
                 base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+            elif "Qwen" in model_name:
+                print("Using model with self-hosting API")
+                api_key = "EMPTY"
+                base_url = "http://0.0.0.0:15237/v1"
             else: # openai
                 openai_api_key = os.getenv("OAI_API_KEY")
                 if not openai_api_key:
@@ -156,7 +160,9 @@ class APIModel:
 
             self.client = OpenAI(
                 api_key=api_key,
-                base_url=base_url
+                base_url=base_url,
+                timeout = 900,
+                max_retries=100,
             )
         elif provider == "google-genai":
             google_genai_api_key = os.getenv("GOOGLE_API_KEY")
@@ -188,7 +194,7 @@ class APIModel:
                 api_key=openai_api_key,
             )
 
-    def _create_completion_with_retry(self, model, messages, max_attempts=5, delay_seconds=2, **kwargs):
+    def _create_completion_with_retry(self, model, messages, max_attempts=100, delay_seconds=2, **kwargs):
         """Calls chat.completions.create with retry logic."""
         response = None
         last_exception = None
