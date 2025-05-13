@@ -161,7 +161,7 @@ class APIModel:
             self.client = OpenAI(
                 api_key=api_key,
                 base_url=base_url,
-                timeout = 900,
+                timeout = 900000000,
                 max_retries=100,
             )
         elif provider == "google-genai":
@@ -325,11 +325,16 @@ class APIModel:
             )
         else:
             assert self.provider in ["openai", "google"]
-            extra_args = {}
-            if "o3" in self.model_name or "o4" in self.model_name or "gemini-2.5" in self.model_name:
+            extra_args = {} 
+            if "o3" in self.model_name or "o4" in self.model_name:
                 extra_args["reasoning_effort"] = "medium"
                 extra_args["max_completion_tokens"] = 10000
                 extra_args["n"] = sampling_params.n
+            elif "gemini-2.5" in self.model_name:
+                print("Using Gemini 2.5 model without reasoning effort.")
+                extra_args["reasoning_effort"] = "none"
+                extra_args["max_completion_tokens"] = 10000
+                extra_args["top_p"] = 1.0
             else:
                 extra_args["max_completion_tokens"] = 10000
                 extra_args["n"] = sampling_params.n
