@@ -328,7 +328,7 @@ class APIModel:
             extra_args = {} 
             if "o3" in self.model_name or "o4" in self.model_name:
                 extra_args["reasoning_effort"] = "medium"
-                extra_args["max_completion_tokens"] = 10000
+                extra_args["max_completion_tokens"] = 20000
                 extra_args["n"] = sampling_params.n
             elif "gemini-2.5" in self.model_name:
                 print("Using Gemini 2.5 model without reasoning effort.")
