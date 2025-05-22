@@ -373,20 +373,23 @@ class ClevrDataset(torch.utils.data.Dataset):
             question_json["questions"][i]["answer"]
             for i in range(len(question_json["questions"]))
         ]
+
+        img_idxs = [question_json["questions"][i]["image_index"] for i in range(len(question_json["questions"]))]
         self.all_scenes = (
             [
-                {key: d[key] for key in ["objects", "relationships"]}
-                for d in scene_json["scenes"]
+                {key: scene_json["scenes"][i][key] for key in ["objects", "relationships"]}
+                for i in img_idxs
+                # for d in scene_json["scenes"]
             ]
             if scene_path
             else None
         )
-        if self.all_scenes is not None:
-            for scene in self.all_scenes:
-                for i in scene["objects"]:
-                    i.pop("rotation")
-                    i.pop("3d_coords")
-                    i.pop("pixel_coords")
+        # if self.all_scenes is not None:
+        #     for scene in self.all_scenes:
+        #         for i in scene["objects"]:
+        #             i.pop("rotation")
+        #             i.pop("3d_coords")
+        #             i.pop("pixel_coords")
 
         # remove yes/no questions
         keep_idx = [
@@ -1457,7 +1460,7 @@ class ClutrrDataset(torch.utils.data.Dataset):
                     # read the first line to get the keys
                     reader = csv.DictReader(f)
                     for row in reader:
-                        self.data.append({"question": row['story'], "answer": row['target'], "query": row['query'], "complexity": comp})
+                        self.data.append({"question": row['story'], "answer": row['target'], "query": row['query'], "complexity": comp, "gt_proof": row['proof_state']})
             # shuffle
             np.random.seed(0)
             self.data = np.random.permutation(self.data)
@@ -1466,7 +1469,7 @@ class ClutrrDataset(torch.utils.data.Dataset):
                 # read the first line to get the keys
                 reader = csv.DictReader(f)
                 for row in reader:
-                    self.data.append({"question": row['story'], "answer": row['target'], "query": row['query'], "complexity": 4})
+                    self.data.append({"question": row['story'], "answer": row['target'], "query": row['query'], "complexity": 4, "gt_proof": row['proof_state']})
 
         # subsample to 300
         print("Number of samples:", len(self.data))
@@ -1502,9 +1505,9 @@ class ClutrrDataset(torch.utils.data.Dataset):
 
         # return (story, query), self.data[index]["answer"].split("#### ")[1]
         if self.decomposed:
-            return [story, query], self.data[index]["answer"], self.data[index]["complexity"]
+            return [story, query], self.data[index]["answer"], self.data[index]["complexity"], self.data[index]["gt_proof"]
         else:
-            return (None, story + f" {query[0]} is {query[1]}'s what? The answer must be one of the following relationships: ['brother', 'sister', 'father', 'mother', 'son', 'daughter', 'grandfather', 'grandmother', 'uncle', 'aunt', 'nephew', 'niece', 'husband', 'wife', 'brother-in-law', 'sister-in-law', 'son-in-law', 'daughter-in-law', 'father-in-law', 'mother-in-law', 'grandson', 'granddaughter']. Please provide the answer in a single word."), self.data[index]["answer"], self.data[index]["complexity"]
+            return (None, story + f" {query[0]} is {query[1]}'s what? The answer must be one of the following relationships: ['brother', 'sister', 'father', 'mother', 'son', 'daughter', 'grandfather', 'grandmother', 'uncle', 'aunt', 'nephew', 'niece', 'husband', 'wife', 'brother-in-law', 'sister-in-law', 'son-in-law', 'daughter-in-law', 'father-in-law', 'mother-in-law', 'grandson', 'granddaughter']. Please provide the answer in a single word."), self.data[index]["answer"], self.data[index]["complexity"], self.data[index]["gt_proof"]
 
     def __len__(self):
         return len(self.data)
