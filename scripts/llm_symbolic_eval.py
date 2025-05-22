@@ -2357,7 +2357,7 @@ def create_symbol_extractor(args, model):
     elif "sum2noise" in args.dataset:
         noise = float(args.dataset.split("_")[-1])
         data = MNISTSumKOrigDataset(root="data", train=False, download=True, k=5, noise=noise)
-        train_data = MNISTSumKOrigDataset(root="data", train=True, download=True, k=5, noise=noise)
+        train_data = MNISTSumKOrigDataset(root="data", train=True, download=True, k=5)
     elif args.dataset == "svhn":
         data = SVHNSumKDataset(root="data", k=5, train=False)
         train_data = SVHNSumKDataset(root="data", k=5, train=True)
@@ -2370,10 +2370,18 @@ def create_symbol_extractor(args, model):
     elif args.dataset == "leaf":
         data = LeafDataset()
         train_data = LeafDataset(train=True)
+    elif "leafnoise" in args.dataset:
+        noise = float(args.dataset.split("_")[-1])
+        data = LeafDataset(noise = noise)
+        train_data = LeafDataset(train=True)
     elif args.dataset == "pathfinder":
         data = PathFinder128Dataset("./data/pathfinder/", "128", difficulty="easy")
     elif args.dataset == "clevr":
         data = ClevrDataset(max_samples=500)
+        train_data = ClevrDataset(max_samples=500)
+    elif "clevrnoise" in args.dataset:
+        noise = float(args.dataset.split("_")[-1])
+        data = ClevrDataset(max_samples=500, noise = noise)
         train_data = ClevrDataset(max_samples=500)
     elif args.dataset == "chartqa":
         data = ChartQADataset()
@@ -2415,8 +2423,9 @@ def create_symbol_extractor(args, model):
         "bbh_shuffle7": bbh_shuffle7_settings,
         "folio": FOLIO_settings
     }
-    if "sum2noise" in args.dataset:
-        get_symbols, function = all_get_symbols["sum2noise"](train_data, model)
+    if "noise" in args.dataset:
+        ds = args.dataset.split("_")[0].replace("noise", "")
+        get_symbols, function = all_get_symbols[ds](train_data, model)
     else:
         get_symbols, function = all_get_symbols[args.dataset](train_data, model)
 
@@ -2463,7 +2472,7 @@ def eval_cached(args):
     prompt_type = "multi_prompt" if args.multi_prompt else "single_prompt"
     for setting_name in settings:
         setting_name = setting_name.lower()
-        with open(f"logs/{model_name}/{args.dataset}/{prompt_type}/{setting_name}{'_handwritten' if args.handwritten else ''}{'_raw' if args.raw else ''}.txt", "r") as f:
+        with open(f"prsy_logs/{model_name}/{args.dataset}/{prompt_type}/{setting_name}{'_handwritten' if args.handwritten else ''}{'_raw' if args.raw else ''}.txt", "r") as f:
             preds = f.readlines()
 
         def get_pred(output):
@@ -2541,14 +2550,14 @@ def eval_cached(args):
         if args.multi_prompt and not args.raw:
             acc = sum([equiv(gt[i], llm_predictions[i], shuf[i]) for i in range(len(llm_predictions))]) / len(llm_predictions)
             print(f"Simulate Setting: {setting_name}, Acc: {acc}")
-            with open(f"logs/{model_name}/{args.dataset}/{prompt_type}/results.txt", "a") as f:
+            with open(f"prsy_logs/{model_name}/{args.dataset}/{prompt_type}/results.txt", "a") as f:
                 f.write(
                     f"simulate_{model_name},{args.dataset},{prompt_type},{setting_name.lower().replace(', ', '_')},{acc}\n"
                 )
 
             acc = sum([equiv(gt[i], eval_predictions[i], shuf[i]) for i in range(len(eval_predictions))]) / len(eval_predictions)
             print(f"Eval Setting: {setting_name}, Acc: {acc}")
-            with open(f"logs/{model_name}/{args.dataset}/{prompt_type}/results.txt", "a") as f:
+            with open(f"prsy_logs/{model_name}/{args.dataset}/{prompt_type}/results.txt", "a") as f:
                 f.write(
                     f"eval_{model_name},{args.dataset},{prompt_type},{setting_name.lower().replace(', ', '_')},{acc}\n"
                 )
@@ -2556,7 +2565,7 @@ def eval_cached(args):
             acc = sum([equiv(gt[i], predictions[i], shuf[i]) for i in range(len(predictions))]) / len(predictions)
             print(f"Setting: {setting_name}, Acc: {acc}")
 
-            with open(f"logs/{model_name}/{args.dataset}/{prompt_type}/results.txt", "a") as f:
+            with open(f"prsy_logs/{model_name}/{args.dataset}/{prompt_type}/results.txt", "a") as f:
                 f.write(
                     f"{model_name},{args.dataset},{prompt_type},{setting_name.lower().replace(', ', '_')},{acc}\n"
                 )
@@ -2617,19 +2626,19 @@ def main(args):
     print(f"Accuracy:", acc)
     results.append(acc)
     
-    # check if logs/model dir exists
+    # check if prsy_logs/model dir exists
     model_name = args.model.split("/")[-1]
-    if not os.path.exists(f"logs/{('debug/' if args.debug else '') + model_name}/{args.dataset}/"):
-        os.makedirs(f"logs/{('debug/' if args.debug else '') + model_name}/{args.dataset}/")
+    if not os.path.exists(f"prsy_logs/{('debug/' if args.debug else '') + model_name}/{args.dataset}/"):
+        os.makedirs(f"prsy_logs/{('debug/' if args.debug else '') + model_name}/{args.dataset}/")
     with open(
-        f"logs/{('debug/' if args.debug else '') + model_name}/{args.dataset}/llm_symbolic_{'fs' if args.few_shot else 'zs'}.txt",
+        f"prsy_logs/{('debug/' if args.debug else '') + model_name}/{args.dataset}/llm_symbolic_{'fs' if args.few_shot else 'zs'}.txt",
         "w",
     ) as f:
         for log in logs:
             f.write(str(log) + "\n")
 
     # append to results file
-    with open(f"logs/{('debug/' if args.debug else '') + model_name}/{args.dataset}/results.txt", "a") as f:
+    with open(f"prsy_logs/{('debug/' if args.debug else '') + model_name}/{args.dataset}/results.txt", "a") as f:
         f.write(
             f"{('debug_' if args.debug else '') + model_name},{args.few_shot},{args.single_turn},{args.image_before},{args.dataset},{acc}\n"
         )

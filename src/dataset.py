@@ -92,8 +92,12 @@ class MNISTSumKOrigDataset(torch.utils.data.Dataset):
             img, label = self.mnist[index * self.k + i]
             if type(img) == Image.Image:
                 if self.noise > 0:
-                    np_img = np.array(img.convert("L"))
-                    np_img = np.clip(np_img + np.random.normal(size=np_img.shape, scale=self.noise), 0, 1) * 255
+                    np_img = np.array(img.convert("L")).astype(np.float32) / 255.0  # normalize to [0,1]
+                    np_img = np.clip(
+                        np_img + np.random.normal(loc=0.0, scale=self.noise, size=np_img.shape),
+                        0.0, 1.0
+                    )
+                    np_img = (np_img * 255).astype(np.uint8)  # scale back to [0,255]
                     img = Image.fromarray(np_img)
                 img = img.convert("RGB")
                 if self.transform:
@@ -105,6 +109,16 @@ class MNISTSumKOrigDataset(torch.utils.data.Dataset):
                 imgs.append(img)
             labels.append(label)
         sum_label = sum(labels)
+        
+        # --- Combine into single image ---
+        concat_img = Image.new("RGB", (28 * self.k, 28))
+        for i in range(self.k):
+            concat_img.paste(imgs[i].convert("RGB"), (28 * i, 0))
+
+        # --- Save to disk ---
+        save_dir = f"/home/nvelingker/unsupervised-nesy/data/mnist2/{self.noise}"
+        os.makedirs(save_dir, exist_ok=True)
+        concat_img.save(os.path.join(save_dir, f"{index}.png"))
 
         return imgs, sum_label, labels
 
@@ -327,12 +341,14 @@ class ClevrDataset(torch.utils.data.Dataset):
         scene_path="./data/CLEVR_v1.0/scenes/CLEVR_val_scenes.json",
         max_samples=None,
         raw_data=False,
+        noise = 0.0,
     ):
         self.images_path = images_path
         self.scene_path = scene_path
         self.max_samples = max_samples
         self.raw_data = raw_data
-
+        self.noise = float(noise)
+        
         question_json = json.load(open(questions_path, "r"))
         if scene_path:
             scene_json = json.load(open(scene_path, "r"))
@@ -411,24 +427,21 @@ class ClevrDataset(torch.utils.data.Dataset):
                     self.images_path, f"CLEVR_{prefix}_{str(image_idx).zfill(6)}.png"
                 )
             )
-            # print(os.path.join(
-            #         self.images_path, f"CLEVR_{prefix}_{str(image_idx).zfill(6)}.png"
-            #     ))
-            # image = torch.FloatTensor(np.asarray(image, dtype=np.float32))
-
-        # program_json = None
-        # if program_seq is not None:
-        #     program_json_seq = []
-        #     for fn_idx in program_seq:
-        #         fn_str = self.vocab["program_idx_to_token"][fn_idx]
-        #         if fn_str == "<START>" or fn_str == "<END>":
-        #             continue
-        #         fn = iep.programs.str_to_function(fn_str)
-        #         program_json_seq.append(fn)
-        #     if self.mode == "prefix":
-        #         program_json = iep.programs.prefix_to_list(program_json_seq)
-        #     elif self.mode == "postfix":
-        #         program_json = iep.programs.postfix_to_list(program_json_seq)
+            if self.noise > 0:
+                # to float32 [0,1]
+                np_img = np.array(image).astype(np.float32) / 255.0
+                # add noise & clamp
+                np_img = np.clip(
+                    np_img + np.random.normal(
+                        loc=0.0, scale=self.noise, size=np_img.shape
+                    ),
+                    0.0, 1.0,
+                )
+                # back to uint8 PIL
+                image = Image.fromarray((np_img * 255).astype(np.uint8))
+                save_dir = f"/home/nvelingker/unsupervised-nesy/data/CLEVR_v1.0/noise/{self.noise}"
+                os.makedirs(save_dir, exist_ok=True)
+                image.save(os.path.join(save_dir, f"{image_idx}.png"))
 
         if self.all_scenes is not None:
             scene = self.all_scenes[index]
@@ -1498,15 +1511,30 @@ class ClutrrDataset(torch.utils.data.Dataset):
 
 
 class LeafDataset(torch.utils.data.Dataset):
-    def __init__(self, root="./", train=False, raw_data=False):
+    def __init__(self, root="./", train=False, raw_data=False, noise = 0.0):
         # data is stored in a directory data/leaf-11 where each subdirectory is a class
         self.raw_data = raw_data
+        self.noise = float(noise)  
         self.data = []
         for i, class_dir in enumerate(os.listdir(root + "data/leaf_11")):
             for img_file in os.listdir(root + f"data/leaf_11/{class_dir}"):
                 img_path = root + f"data/leaf_11/{class_dir}/{img_file}"
+                img = Image.open(img_path).convert("RGB")
+
+                # ——— Add Gaussian noise if enabled ———
+                if self.noise > 0:
+                    np_img = np.array(img).astype(np.float32) / 255.0
+                    np_img = np.clip(
+                        np_img + np.random.normal(loc=0.0, scale=self.noise, size=np_img.shape),
+                        0.0, 1.0
+                    )
+                    img = Image.fromarray((np_img * 255).astype(np.uint8))
+                    save_dir = f"/home/nvelingker/unsupervised-nesy/data/leaf/noise/{self.noise}"
+                    os.makedirs(save_dir, exist_ok=True)
+                    img.save(os.path.join(save_dir, f"{class_dir}{img_file}.png"))
+
                 label = class_dir
-                self.data.append(([Image.open(img_path).convert("RGB")], label))
+                self.data.append(([img], label))
         
         # subsample to 200 samples
         np.random.seed(0)
