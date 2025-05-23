@@ -1532,22 +1532,22 @@ class LeafDataset(torch.utils.data.Dataset):
                         0.0, 1.0
                     )
                     img = Image.fromarray((np_img * 255).astype(np.uint8))
-                    save_dir = f"/home/nvelingker/unsupervised-nesy/data/leaf/noise/{self.noise}"
-                    os.makedirs(save_dir, exist_ok=True)
-                    img.save(os.path.join(save_dir, f"{class_dir}{img_file}.png"))
+                    # save_dir = f"/home/nvelingker/unsupervised-nesy/data/leaf/noise/{self.noise}"
+                    # os.makedirs(save_dir, exist_ok=True)
+                    # img.save(os.path.join(save_dir, f"{class_dir}{img_file}.png"))
 
                 label = class_dir
                 self.data.append(([img], label))
         
-        # subsample to 200 samples
-        np.random.seed(0)
-        shuf = np.random.permutation(len(self.data))
-        if not train:
-            # self.data = [self.data[i] for i in shuf[:200]]
-            self.data = pickle.load(open(root + "data/leaf_test.pkl", "rb"))
-        else:
-            # get remaining samples
-            self.data = [self.data[i] for i in shuf[200:]]
+        # # subsample to 200 samples
+        # np.random.seed(0)
+        # shuf = np.random.permutation(len(self.data))
+        # if not train:
+        #     # self.data = [self.data[i] for i in shuf[:200]]
+        #     self.data = pickle.load(open(root + "data/leaf_test.pkl", "rb"))
+        # else:
+        #     # get remaining samples
+        #     self.data = [self.data[i] for i in shuf[200:]]
 
     def __getitem__(self, index):
         if self.raw_data:
