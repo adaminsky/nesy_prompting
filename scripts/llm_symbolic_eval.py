@@ -13,7 +13,7 @@ from transformers import MllamaForConditionalGeneration, AutoProcessor, AutoMode
 from src.symbol_mapping import LLMNet
 from src.function import LLMNesy
 from src.utils import IOExamples, RawInput, img2base64, base642img, eval_extracted_code
-from src.pddl import eval_solution_files, find_solution
+# from src.pddl import eval_solution_files, find_solution
 from src.function_evaluation import python_eval
 from src.program_gen import ProgramSynthesisSolver, DSLOp
 import time
