@@ -189,12 +189,13 @@ class MNISTSumKDataset(torch.utils.data.Dataset):
 
 
 class HWFDataset(torch.utils.data.Dataset):
-    def __init__(self, root: str, split: str, length: int, concatenate=False, transform=None):
+    def __init__(self, root: str, split: str, length: int, concatenate=False, transform=None, noise = 0):
         super(HWFDataset, self).__init__()
         self.root = root
         self.split = split
         self.concatenate = concatenate
         self.transform = transform
+        self.noise = float(noise)
         md = json.load(open(os.path.join(root, f"HWF/expr_{split}.json")))
 
         # finding only the metadata with length == 1
@@ -220,6 +221,27 @@ class HWFDataset(torch.utils.data.Dataset):
                 self.root, "HWF/Handwritten_Math_Symbols", img_path
             )
             img = Image.open(img_full_path).convert("RGB")
+            
+            # ---------- Gaussian noise (same as MNISTSumKOrigDataset) ----------
+            if self.noise > 0:
+                if isinstance(img, Image.Image):            # PIL branch
+                    np_img = np.array(img.convert("L"), dtype=np.float32) / 255.0
+                    np_img = np.clip(
+                        np_img + np.random.normal(loc=0.0,
+                                                   scale=self.noise,
+                                                   size=np_img.shape
+                                                   ),
+                                0.0,
+                                1.0,
+                            )
+                    np_img = (np_img * 255).astype(np.uint8)
+                    img = Image.fromarray(np_img).convert("RGB")
+                else:                                       # tensor branch (rare)
+                    img = torch.clamp(
+                        img + torch.randn_like(img) * self.noise, 0.0, 1.0
+                    )
+            # -------------------------------------------------------------------
+            
             if self.transform:
                 img = self.transform(img.convert("L"))
             # img = self.img_transform(img)
@@ -1532,9 +1554,9 @@ class LeafDataset(torch.utils.data.Dataset):
                         0.0, 1.0
                     )
                     img = Image.fromarray((np_img * 255).astype(np.uint8))
-                    # save_dir = f"/home/nvelingker/unsupervised-nesy/data/leaf/noise/{self.noise}"
-                    # os.makedirs(save_dir, exist_ok=True)
-                    # img.save(os.path.join(save_dir, f"{class_dir}{img_file}.png"))
+                    save_dir = f"/home/nvelingker/unsupervised-nesy/data/leaf/noise/{self.noise}"
+                    os.makedirs(save_dir, exist_ok=True)
+                    img.save(os.path.join(save_dir, f"{class_dir}{img_file}.png"))
 
                 label = class_dir
                 self.data.append(([img], label))
