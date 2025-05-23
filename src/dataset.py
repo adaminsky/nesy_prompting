@@ -11,7 +11,7 @@ import random
 from datasets import load_dataset
 from typing import Optional, Callable
 import subprocess
-import pddlpy
+# import pddlpy
 import tempfile
 from src.program_gen import demonstrate_generator
 import random
@@ -110,15 +110,15 @@ class MNISTSumKOrigDataset(torch.utils.data.Dataset):
             labels.append(label)
         sum_label = sum(labels)
         
-        # --- Combine into single image ---
-        concat_img = Image.new("RGB", (28 * self.k, 28))
-        for i in range(self.k):
-            concat_img.paste(imgs[i].convert("RGB"), (28 * i, 0))
+        # # --- Combine into single image ---
+        # concat_img = Image.new("RGB", (28 * self.k, 28))
+        # for i in range(self.k):
+        #     concat_img.paste(imgs[i].convert("RGB"), (28 * i, 0))
 
-        # --- Save to disk ---
-        save_dir = f"/home/nvelingker/unsupervised-nesy/data/mnist2/{self.noise}"
-        os.makedirs(save_dir, exist_ok=True)
-        concat_img.save(os.path.join(save_dir, f"{index}.png"))
+        # # --- Save to disk ---
+        # save_dir = f"/home/nvelingker/unsupervised-nesy/data/mnist2/{self.noise}"
+        # os.makedirs(save_dir, exist_ok=True)
+        # concat_img.save(os.path.join(save_dir, f"{index}.png"))
 
         return imgs, sum_label, labels
 
@@ -1539,6 +1539,8 @@ class LeafDataset(torch.utils.data.Dataset):
                 label = class_dir
                 self.data.append(([img], label))
         
+        random.seed(0)
+        self.data = random.sample(self.data, 200)
         # # subsample to 200 samples
         # np.random.seed(0)
         # shuf = np.random.permutation(len(self.data))
