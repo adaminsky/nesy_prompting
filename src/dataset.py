@@ -1546,32 +1546,31 @@ class LeafDataset(torch.utils.data.Dataset):
                 img_path = root + f"data/leaf_11/{class_dir}/{img_file}"
                 img = Image.open(img_path).convert("RGB")
 
-                # ——— Add Gaussian noise if enabled ———
-                if self.noise > 0:
-                    np_img = np.array(img).astype(np.float32) / 255.0
-                    np_img = np.clip(
-                        np_img + np.random.normal(loc=0.0, scale=self.noise, size=np_img.shape),
-                        0.0, 1.0
-                    )
-                    img = Image.fromarray((np_img * 255).astype(np.uint8))
-                    save_dir = f"/home/nvelingker/unsupervised-nesy/data/leaf/noise/{self.noise}"
-                    os.makedirs(save_dir, exist_ok=True)
-                    img.save(os.path.join(save_dir, f"{class_dir}{img_file}.png"))
-
                 label = class_dir
                 self.data.append(([img], label))
         
-        random.seed(0)
-        self.data = random.sample(self.data, 200)
-        # # subsample to 200 samples
-        # np.random.seed(0)
-        # shuf = np.random.permutation(len(self.data))
-        # if not train:
-        #     # self.data = [self.data[i] for i in shuf[:200]]
-        #     self.data = pickle.load(open(root + "data/leaf_test.pkl", "rb"))
-        # else:
-        #     # get remaining samples
-        #     self.data = [self.data[i] for i in shuf[200:]]
+        # subsample to 200 samples
+        np.random.seed(0)
+        shuf = np.random.permutation(len(self.data))
+        if not train:
+            # self.data = [self.data[i] for i in shuf[:200]]
+            self.data = pickle.load(open(root + "data/leaf_test.pkl", "rb"))
+        else:
+            # get remaining samples
+            self.data = [self.data[i] for i in shuf[200:]]
+
+        for i, (img, label) in enumerate(self.data):
+            img = img[0] 
+            # ——— Add Gaussian noise if enabled ———
+            if self.noise > 0:
+                np_img = np.array(img).astype(np.float32) / 255.0
+                np_img = np.clip(
+                    np_img + np.random.normal(loc=0.0, scale=self.noise, size=np_img.shape),
+                    0.0, 1.0
+                )
+                img = Image.fromarray((np_img * 255).astype(np.uint8))
+            self.data[i] = ([img], label)
+
 
     def __getitem__(self, index):
         if self.raw_data:
