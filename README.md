@@ -1,26 +1,15 @@
-# Expert-free Neurosymbolic with Foundation Models
-
-- Foundation models (FMs) seem to "understand" general raw data.
-- How can we build systems ontop of this understanding, allowing us to "program"
-using abstractions from a FM?
-- For example, LLMs can perform some neurosymbolic tasks (involving input
-understanding as well as reasoning) zero-shot, but certain forms of prompt
-engineering such as Chain-of-Thought can significantly improve their
-performance.
-- We formalize this problem as neurosymbolic using foundation models, where a
-foundation model can act as both a system for input understanding as well as
-program synthesis, allowing us to replace the requirement for experts in
-neurosymbolic with scale.
+# Code Submission
 
 ## Setup
-Start by creating a virtual environment with `make create_environment`. This
-uses the current version of python used when you call `python`, so you should
-first create a conda environment with a specific python version if running
-`python --version` is not Python 3.10+.
+Start by creating a Python virtual environment and installing dependencies:
 
-Activate the newly created environment with `source .venv/bin/activate`.
-Finally, install the requirements with `make requirements`.
+```bash
+make create_environment
+source .venv/bin/activate
+make requirements
+```
 
+Ensure your `python` command points to a Python 3.10+ interpreter.
 
 ### Download Datasets
 First create the `data/` directory.
@@ -34,22 +23,22 @@ and place under `data/HWF`.
 Download from [here](https://dl.fbaipublicfiles.com/clevr/CLEVR_v1.0.zip) and
 place under `data/CLEVR_v1.0`.
 
-#### Pathfinder
+## Running the Main Experiments
 
-Download my version of the code and then follow the instructions in the README.
+The main experiments were conducted using the `scripts/llm_symbolic_eval.py` script. After setting up the environment as described above, you can run the experiments locally. For example, to run the CLEVR few-shot experiment with logging:
 
-#### Mystery Blocksworld
-
-Download from [here](https://raw.githubusercontent.com/karthikv792/LLMs-Planning/refs/heads/main/plan-bench/prompts/mystery_blocksworld/task_1_plan_generation.json).
-
-## Running in Docker
-
-First build the docker container with:
-```sh
-docker build -t llmnesy .
+```bash
+python scripts/llm_symbolic_eval.py \
+  --dataset clevr \
+  --log \
+  --few_shot \
+  --model gemini-2.0-flash \
+  --image_before \
+  --single_turn
 ```
 
-Then, the experiments can be run in the docker container with the following:
-```sh
-docker run -it -v ~/.cache/huggingface:/huggingface -e CUDA_VISIBLE_DEVICES=0 llmnesy python scripts/eval_all_nesy.py --dataset blocksworld --multi_prompt --use_hf --log
+For a full list of options, see:
+
+```bash
+python scripts/llm_symbolic_eval.py --help
 ```
