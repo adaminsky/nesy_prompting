@@ -1,6 +1,6 @@
 # Neuro-Symbolic Prompting
 
-![nesy-prompting](nesy_prompting_logo.png)
+<img src="nesy_prompting_logo.png" width="300">
 
 ## Setup
 Start by creating a Python virtual environment and installing dependencies:
