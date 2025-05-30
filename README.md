@@ -1,6 +1,12 @@
+<p align="center">
+  <img src="nesy_prompting_logo.png" width="300" alt="Neuro-Symbolic Prompting Logo" />
+</p>
+
 # Neuro-Symbolic Prompting
 
-<img src="nesy_prompting_logo.png" width="300">
+A repository for Neuro-Symbolic Prompting experiments on visual reasoning tasks such as CLEVR and HWF.
+
+---
 
 ## Setup
 Start by creating a Python virtual environment and installing dependencies:
