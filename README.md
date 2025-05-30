@@ -1,4 +1,6 @@
-# Code Submission
+# Neuro-Symbolic Prompting
+
+![nesy-prompting](nesy_prompting_logo.png)
 
 ## Setup
 Start by creating a Python virtual environment and installing dependencies:
